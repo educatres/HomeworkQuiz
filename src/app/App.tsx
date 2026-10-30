@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import type { AppSettings } from '../persistence/localSettings'
 import { clearKeys, DEFAULT_BASE_URLS, DEFAULT_SETTINGS, loadKeys, loadSettings, saveKeys, saveModelConfig, saveSettings, setActiveBatch } from '../persistence/localSettings'
 import { putRecord } from '../persistence/indexedDb'
@@ -135,7 +135,7 @@ function QuizPanel({ plan, updatePlan, records, bundles, busy, onGenerate, onStu
 type GradingFileKind = 'submission' | 'key' | 'exam' | 'invalid'
 type GradingFile = { file_name: string; kind: GradingFileKind; filename_key: string; student_id?: string; data?: StudentSubmission | TeacherAnswerKey | StudentExam; error?: string }
 type GradingPair = { id: string; student_id: string; submission?: GradingFile; key?: GradingFile; exam?: StudentExam; fallbackKey?: TeacherAnswerKey; status: 'matched' | 'missing_key' | 'missing_submission' | 'missing_exam' | 'duplicate'; message: string }
-type GradeReportRow = { student_id: string; score?: number; max?: number; status: string; message: string; submission_file: string; key_file: string }
+type GradeReportRow = { pair_id: string; student_id: string; score?: number; max?: number; status: string; message: string; submission_file: string; key_file: string }
 
 function gradingFilenameKey(fileName: string) {
   let stem = (fileName.split(/[\\/]/).pop() ?? fileName).replace(/\.(json|htm|html)$/i, '')
@@ -192,13 +192,61 @@ function buildGradingPairs(files: GradingFile[], bundles: QuizBundle[]): Grading
 function gradingStatusLabel(status: GradingPair['status']) { return { matched: '可批改', missing_key: '缺少參考答案', missing_submission: '缺少作答', missing_exam: '缺少試卷', duplicate: '配對不唯一' }[status] }
 function csvCell(value: string | number) { return `"${String(value).replace(/"/g, '""')}"` }
 
+type PairZone = 'unmatched' | 'student' | 'unknown'
+type PairAssignment = { submission?: string; key?: string }
+
 function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
   const [files, setFiles] = useState<GradingFile[]>([])
   const [results, setResults] = useState<GradeReportRow[]>([])
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [drag, setDrag] = useState(false)
-  const pairs = buildGradingPairs(files, bundles)
+  const [assignments, setAssignments] = useState<Record<string, PairAssignment>>({})
+  const [releasedFiles, setReleasedFiles] = useState<string[]>([])
+  const [zones, setZones] = useState<Record<PairZone, string[]>>({ unmatched: [], student: [], unknown: [] })
+  const basePairs = buildGradingPairs(files, bundles)
+  const fileMap = new Map(files.map(file => [file.file_name, file]))
+  const released = new Set(releasedFiles)
+  const examFiles = files.filter(file => file.kind === 'exam')
+  const refreshPair = (base: GradingPair): GradingPair => {
+    const override = assignments[base.id]
+    const submissionName = override && Object.prototype.hasOwnProperty.call(override, 'submission') ? override.submission : base.submission && !released.has(base.submission.file_name) ? base.submission.file_name : undefined
+    const keyName = override && Object.prototype.hasOwnProperty.call(override, 'key') ? override.key : base.key && !released.has(base.key.file_name) ? base.key.file_name : undefined
+    const submission = submissionName ? fileMap.get(submissionName) : undefined
+    const key = keyName ? fileMap.get(keyName) : undefined
+    const bundle = submission ? bundles.find(item => bundleMatchesFile(submission, item)) : undefined
+    const importedExam = submission ? examFiles.find(exam => gradingFileMatches(submission, exam)) : undefined
+    const exam = (importedExam?.data && importedExam.kind === 'exam' ? importedExam.data : bundle?.exam ?? base.exam) as StudentExam | undefined
+    const fallbackKey = key ? undefined : bundle?.key ?? (submission ? base.fallbackKey : undefined)
+    const data = gradingData(submission?.data)
+    const student_id = data?.student_id || gradingData(key?.data)?.student_id || exam?.student_id || base.student_id
+    const status: GradingPair['status'] = !submission ? 'missing_submission' : !exam ? 'missing_exam' : !key && !fallbackKey ? 'missing_key' : 'matched'
+    const message = status === 'matched' ? '可批改' : status === 'missing_submission' ? '找不到對應學生作答。' : status === 'missing_exam' ? '找不到對應試卷。' : '找不到參考答案。'
+    return { ...base, student_id, submission, key, exam, fallbackKey, status, message }
+  }
+  const pairs = basePairs.map(refreshPair)
+  function beginDrag(event: DragEvent, fileName: string) { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-homework-file', fileName) }
+  function draggedFile(event: DragEvent) { return event.dataTransfer.getData('application/x-homework-file') }
+  function removeFromZones(fileName: string) { setZones(current => ({ unmatched: current.unmatched.filter(item => item !== fileName), student: current.student.filter(item => item !== fileName), unknown: current.unknown.filter(item => item !== fileName) })) }
+  function clearAssignment(fileName: string, current: Record<string, PairAssignment>) { Object.entries(current).forEach(([pairId, assignment]) => { if (assignment.submission === fileName || assignment.key === fileName) { const next = { ...assignment }; if (next.submission === fileName) delete next.submission; if (next.key === fileName) delete next.key; current[pairId] = next } }) }
+  function assignFile(fileName: string, pair: GradingPair, forcedSlot?: 'submission' | 'key') {
+    const file = fileMap.get(fileName)
+    if (!file || (file.kind !== 'submission' && file.kind !== 'key')) { setMessage('只有學生作答或參考答案檔案可以放入配對表格。'); return }
+    const slot = forcedSlot ?? (file.kind === 'key' ? 'key' : 'submission')
+    const currentPair = pairs.find(item => item.id === pair.id)
+    const nextAssignments: Record<string, PairAssignment> = Object.fromEntries(Object.entries(assignments).map(([id, value]) => [id, { ...value }]))
+    clearAssignment(fileName, nextAssignments)
+    const existing = slot === 'key' ? currentPair?.key?.file_name : currentPair?.submission?.file_name
+    if (existing && existing !== fileName) { setReleasedFiles(current => current.includes(existing) ? current : [...current, existing]); clearAssignment(existing, nextAssignments) }
+    nextAssignments[pair.id] = { ...(nextAssignments[pair.id] ?? {}), [slot]: fileName }
+    setAssignments(nextAssignments); setReleasedFiles(current => current.includes(fileName) ? current : [...current, fileName]); removeFromZones(fileName); setResults([]); setMessage(`已將 ${fileName} 放入 ${pair.student_id} 的${slot === 'key' ? '參考答案' : '作答檔'}。`)
+  }
+  function moveToZone(event: React.DragEvent, zone: PairZone) {
+    event.preventDefault(); const fileName = draggedFile(event); const file = fileMap.get(fileName); if (!fileName || !file) return
+    const nextAssignments: Record<string, PairAssignment> = Object.fromEntries(Object.entries(assignments).map(([id, value]) => [id, { ...value }]))
+    clearAssignment(fileName, nextAssignments)
+    setAssignments(nextAssignments); setReleasedFiles(current => current.includes(fileName) ? current : [...current, fileName]); removeFromZones(fileName); setZones(current => ({ ...current, [zone]: [...current[zone].filter(item => item !== fileName), fileName] })); setResults([]); setMessage(`已將 ${fileName} 移到「${zone === 'unmatched' ? '沒有配對的答案' : zone === 'student' ? '學生回答' : '無法分辨是答案或回答的資料'}」。`)
+  }
   async function importFiles(input: FileList | File[] | null) {
     if (!input) return
     const parsed: GradingFile[] = []
@@ -206,45 +254,32 @@ function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
       const base = { file_name: file.name, kind: 'invalid' as GradingFileKind, filename_key: gradingFilenameKey(file.name) }
       if (!/\.(json|htm|html)$/i.test(file.name)) { parsed.push({ ...base, error: '請匯入 JSON 或教師答案 HTML 檔案。' }); continue }
       try {
-        const text = await file.text()
-        let value: unknown
+        const text = await file.text(); let value: unknown
         if (/\.json$/i.test(file.name)) value = JSON.parse(text)
-        else {
-          const document = new DOMParser().parseFromString(text, 'text/html')
-          const embeddedKey = document.querySelector('#teacher-key')?.textContent
-          if (!embeddedKey) throw new Error('教師答案 HTML 沒有可供批改的參考答案資料。')
-          value = JSON.parse(embeddedKey)
-        }
-        const classified = classifyGradingJson(value)
-        const data = gradingData(classified.data)
+        else { const document = new DOMParser().parseFromString(text, 'text/html'); const embeddedKey = document.querySelector('#teacher-key')?.textContent; if (!embeddedKey) throw new Error('教師答案 HTML 沒有可供批改的參考答案資料。'); value = JSON.parse(embeddedKey) }
+        const classified = classifyGradingJson(value); const data = gradingData(classified.data)
         parsed.push({ ...base, kind: classified.kind, data: classified.data, student_id: data?.student_id, error: classified.error })
-      } catch { parsed.push({ ...base, error: 'JSON 解析失敗。' }) }
+      } catch { parsed.push({ ...base, error: '檔案解析失敗。' }) }
     }
-    setFiles(current => [...current, ...parsed])
-    setResults([])
-    setMessage(`已匯入 ${parsed.length} 個檔案；請確認檔名配對後按「開始批改」。`)
+    setFiles(current => [...current, ...parsed]); setResults([]); setZones(current => ({ ...current, unknown: [...current.unknown, ...parsed.filter(file => file.kind === 'invalid').map(file => file.file_name)] })); setMessage(`已匯入 ${parsed.length} 個檔案；請確認配對後按「批改」。`)
   }
-  function runGrading() {
-    setBusy(true)
-    const report = pairs.map(pair => {
-      const submission = pair.submission?.data as StudentSubmission | undefined
-      const key = (pair.key?.data as TeacherAnswerKey | undefined) ?? pair.fallbackKey
-      if (pair.status !== 'matched' || !pair.exam || !submission || !key) return { student_id: pair.student_id, status: gradingStatusLabel(pair.status), message: pair.message, submission_file: pair.submission?.file_name || '—', key_file: pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—') }
-      const result = gradeObjective(pair.exam, key, submission)
-      return { student_id: pair.student_id, score: result.total_score, max: result.max_score, status: result.status === 'auto_graded' ? '已完成' : '需人工覆核', message: result.status === 'auto_graded' ? '選擇題已完成本機計分。' : '含簡答題、版本不符或其他需覆核項目。', submission_file: pair.submission?.file_name || '—', key_file: pair.key?.file_name || '目前批次答案' }
-    })
-    setResults(report); setBusy(false); setMessage(`批改完成，共產生 ${report.length} 位學生的分數報告。`)
+  function makeReport(pair: GradingPair): GradeReportRow {
+    const submission = pair.submission?.data as StudentSubmission | undefined; const key = (pair.key?.data as TeacherAnswerKey | undefined) ?? pair.fallbackKey
+    if (pair.status !== 'matched' || !pair.exam || !submission || !key) return { pair_id: pair.id, student_id: pair.student_id, status: gradingStatusLabel(pair.status), message: pair.message, submission_file: pair.submission?.file_name || '—', key_file: pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—') }
+    const result = gradeObjective(pair.exam, key, submission)
+    return { pair_id: pair.id, student_id: pair.student_id, score: result.total_score, max: result.max_score, status: result.status === 'auto_graded' ? '已完成' : '需人工覆核', message: result.status === 'auto_graded' ? '選擇題已完成本機計分。' : '含簡答題、版本不符或其他需覆核項目。', submission_file: pair.submission?.file_name || '—', key_file: pair.key?.file_name || '目前批次答案' }
   }
-  function downloadReport() {
-    const header = ['學生', '分數', '滿分', '狀態', '作答檔', '參考答案']
-    const rows = results.map(row => [row.student_id, row.score ?? '', row.max ?? '', row.status, row.submission_file, row.key_file].map(csvCell).join(','))
-    downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `grading_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8')
-  }
+  function runGrading() { setBusy(true); setResults(pairs.map(makeReport)); setBusy(false); setMessage(`批改完成，共產生 ${pairs.length} 位學生的分數報告。`) }
+  function gradeOne(pair: GradingPair) { if (pair.status !== 'matched') return; setBusy(true); const report = makeReport(pair); setResults(current => [...current.filter(row => row.pair_id !== pair.id), report]); setBusy(false); setMessage(`${pair.student_id} 批改完成。`) }
+  function downloadReport() { const header = ['學生', '分數', '滿分', '狀態', '作答檔', '參考答案']; const rows = results.map(row => [row.student_id, row.score ?? '', row.max ?? '', row.status, row.submission_file, row.key_file].map(csvCell).join(',')); downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `grading_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8') }
+  const zoneItems: Record<PairZone, string[]> = { unmatched: [...new Set([...zones.unmatched, ...pairs.filter(pair => pair.status === 'missing_submission' && pair.key?.file_name).map(pair => pair.key!.file_name)])], student: zones.student, unknown: [...new Set([...zones.unknown, ...files.filter(file => file.kind === 'invalid').map(file => file.file_name)])] }
+  const zoneDefinitions: { id: PairZone; label: string; hint: string }[] = [{ id: 'unmatched', label: '沒有配對的答案', hint: '將參考答案拖到學生列。' }, { id: 'student', label: '學生回答', hint: '暫放學生交卷檔。' }, { id: 'unknown', label: '無法分辨是答案或回答的資料', hint: '檢查檔案格式或內容。' }]
+  const fileKindLabel = (kind: GradingFileKind) => kind === 'submission' ? '學生作答' : kind === 'key' ? '參考答案' : kind === 'exam' ? '試卷' : '無法辨識'
   return <>
-    <section className="panel grade-hero"><div><span className="hero-kicker">MATCH → GRADE → REPORT</span><h2>批次匯入作答與參考答案</h2><p>一次拖入多份作答 JSON 或教師答案 HTML，系統依檔名與識別欄位配對；匯入後不會立即批改。</p></div><button className="primary-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>{busy ? '批改中…' : '批改'}</button></section>
+    <section className="panel grade-hero"><div><span className="hero-kicker">MATCH → GRADE → REPORT</span><h2>批次匯入作答與參考答案</h2><p>一次拖入多份作答 JSON 或教師答案 HTML，系統依檔名與識別欄位配對；匯入後不會立即批改。</p></div></section>
     <section className={`dropzone ${drag ? 'drag' : ''}`} onDragOver={event => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={event => { event.preventDefault(); setDrag(false); void importFiles(event.dataTransfer.files) }}><div className="upload-icon">↑</div><h2>拖曳作答與參考答案到這裡</h2><p>支援學生交卷 JSON、教師答案 JSON 或 .A.htm；可一次選取或拖曳多個檔案。</p><label className="primary-button">選擇檔案<input type="file" accept=".json,.htm,.html,application/json,text/html" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files) }} /></label></section>
-    <section className="panel"><div className="panel-title"><div><h2>匯入檔案 <span className="count">{files.length}</span></h2><p>檔名相同或可由學生 ID／quiz ID 對應的檔案會自動配對。</p></div><button className="ghost-button" disabled={!files.length || busy} onClick={() => { setFiles([]); setResults([]); setMessage('') }}>清空清單</button></div>{files.length ? <div className="file-table"><div className="file-row header"><span>檔案</span><span>類型</span><span>學生</span><span>狀態</span></div>{files.map((file, index) => <div className="file-row" key={`${file.file_name}-${index}`}><span className="file-name">{file.file_name}</span><span>{file.kind === 'submission' ? '學生作答' : file.kind === 'key' ? '參考答案' : file.kind === 'exam' ? '試卷' : '無法辨識'}</span><span>{file.student_id || '—'}</span><span className="muted">{file.error || '已載入'}</span></div>)}</div> : <div className="empty-state">尚未匯入檔案。</div>}</section>
-    <section className="panel"><div className="panel-title"><div><h2>配對檢查</h2><p>{message || '匯入後請確認作答與參考答案的配對狀態。'}</p></div></div>{pairs.length ? <div className="grading-pair-table"><div className="grading-pair-row header"><span>學生</span><span>作答檔</span><span>參考答案</span><span>狀態</span></div>{pairs.map(pair => <div className="grading-pair-row" key={pair.id}><span>{pair.student_id}</span><span>{pair.submission?.file_name || '—'}</span><span>{pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—')}</span><span className={pair.status === 'matched' ? 'match-ok' : 'match-warning'}>{gradingStatusLabel(pair.status)}</span></div>)}</div> : <div className="empty-state">匯入檔案後會在這裡顯示配對結果。</div>}</section>
-    {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><button className="ghost-button" onClick={downloadReport}>下載分數報告 CSV</button></div><div className="grading-report-table"><div className="grading-report-row header"><span>學生</span><span>分數</span><span>狀態</span><span>作答檔</span><span>參考答案</span></div>{results.map((row, index) => <div className="grading-report-row" key={`${row.student_id}-${index}`}><span>{row.student_id}</span><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong><span>{row.status}</span><span title={row.submission_file}>{row.submission_file}</span><span title={row.key_file}>{row.key_file}</span></div>)}</div></section>}
+    <section className="panel"><div className="panel-title"><div><h2>匯入檔案 <span className="count">{files.length}</span></h2><p>檔名相同或可由學生 ID／quiz ID 對應的檔案會自動配對。</p></div><button className="ghost-button" disabled={!files.length || busy} onClick={() => { setFiles([]); setResults([]); setAssignments({}); setReleasedFiles([]); setZones({ unmatched: [], student: [], unknown: [] }); setMessage('') }}>清空清單</button></div>{files.length ? <div className="file-table"><div className="file-row header"><span>檔案</span><span>類型</span><span>學生</span><span>狀態</span></div>{files.map((file, index) => <div className="file-row" key={`${file.file_name}-${index}`} draggable onDragStart={event => beginDrag(event, file.file_name)}><span className="file-name">{file.file_name}</span><span>{fileKindLabel(file.kind)}</span><span>{file.student_id || '—'}</span><span className="muted">{file.error || '已載入；可拖曳配對'}</span></div>)}</div> : <div className="empty-state">尚未匯入檔案。</div>}</section>
+    <section className="panel"><div className="panel-title"><div><h2>配對檢查</h2><p>{message || '可將檔案拖到學生列或下方分類區；確認後再按批改。'}</p></div><button className="primary-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>{busy ? '批改中…' : '批改'}</button></div><div className="pair-drop-zones">{zoneDefinitions.map(zone => <div className="pair-drop-zone" key={zone.id} onDragOver={event => event.preventDefault()} onDrop={event => moveToZone(event, zone.id)}><h3>{zone.label}</h3><small>{zone.hint}</small><div className="pair-drop-items">{zoneItems[zone.id].map(fileName => <span key={fileName} draggable onDragStart={event => beginDrag(event, fileName)}>{fileName}</span>)}</div></div>)}</div>{pairs.length ? <div className="grading-pair-table"><div className="grading-pair-row header"><span>學生</span><span>作答檔</span><span>參考答案</span><span>狀態</span><span>批改</span></div>{pairs.map(pair => { const report = results.find(row => row.pair_id === pair.id); return <div className="grading-pair-row" key={pair.id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const fileName = draggedFile(event); if (fileName) assignFile(fileName, pair) }}><span>{pair.student_id}</span><span className="draggable-file" draggable={!!pair.submission} onDragStart={event => pair.submission && beginDrag(event, pair.submission.file_name)}>{pair.submission?.file_name || '—'}</span><span className="draggable-file" draggable={!!pair.key} onDragStart={event => pair.key && beginDrag(event, pair.key.file_name)}>{pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—')}</span><span className={pair.status === 'matched' ? 'match-ok' : 'match-warning'}>{gradingStatusLabel(pair.status)}</span><button className="small-button" disabled={busy || pair.status !== 'matched'} onClick={() => gradeOne(pair)}>{report ? '重批' : '批改'}</button></div> })}</div> : <div className="empty-state">匯入檔案後會在這裡顯示配對結果。</div>}</section>
+    {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><button className="ghost-button" onClick={downloadReport}>下載分數報告 CSV</button></div><div className="grading-report-table"><div className="grading-report-row header"><span>學生</span><span>分數</span><span>狀態</span><span>作答檔</span><span>參考答案</span></div>{results.map((row, index) => <div className="grading-report-row" key={`${row.pair_id}-${index}`}><span>{row.student_id}</span><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong><span>{row.status}</span><span title={row.submission_file}>{row.submission_file}</span><span title={row.key_file}>{row.key_file}</span></div>)}</div></section>}
   </>
 }
