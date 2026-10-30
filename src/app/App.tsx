@@ -90,7 +90,7 @@ export default function App() {
       } catch (error) { lastError = error instanceof Error ? error.message : '未知錯誤'; if (attempt < 3) { setNotice(`${record.student_id} 第 ${attempt} 次出題失敗，將自動重新呼叫模型（第 ${attempt + 1}/3 次）。`); await new Promise(resolve => setTimeout(resolve, 350)) } }
     }
     if (!generated) { updateExamRow(rowId, { status: 'failed', error: `連續 3 次出題失敗：${lastError}`, completed_questions: 0 }); setNotice(`${record.student_id} 連續 3 次出題失敗，可在結果表按「重新出題」。`); return undefined }
-    updateExamRow(rowId, { status: 'completed', completed_questions: generated.exam.questions.length, total_questions: generated.exam.questions.length, bundle: generated, error: undefined }); setBundles(current => [...current.filter(bundle => bundle.exam.student_id !== generated!.exam.student_id), generated!]); setNotice(`已完成一份試卷：${record.student_id}`); return generated
+    updateExamRow(rowId, { status: 'completed', completed_questions: generated.exam.questions.length, total_questions: generated.exam.questions.length, bundle: generated, error: undefined }); setBundles(current => [...current.filter(bundle => bundle.exam.student_id !== generated!.exam.student_id), generated!]); return generated
   }
   async function generate() {
     const readyRecords = records.filter(r => r.status === 'ready'); if (!readyRecords.length) { setNotice('請先匯入至少一份可分析的作業。'); setTab('import'); return }
