@@ -1,0 +1,16 @@
+# AI Homework Quiz
+
+瀏覽器本機運作的教師批次個別化測驗工作台。它依照 `DEVELOPMENT_SPEC.md` 將作業來源、學生試卷與教師答案包分離，支援離線學生 HTML、JSON/Markdown 作答格式、客觀題本機評分，以及可插拔的 OpenAI、Gemini、xAI 與 CGU provider。
+
+## 開發
+
+```bash
+npm install
+npm run dev
+npm run build
+npm test
+```
+
+部署產物是 `dist/`，GitHub Pages workflow 會以 repository 子路徑部署。API key 只在教師瀏覽器內使用；若勾選記住，會寫入 `localStorage`，不會進入學生 HTML、ZIP、URL 或 log。離線試卷不提供伺服器提交或防作弊保證。
+
+離線示範模式可先匯入 TXT、Markdown 或程式碼並建立試卷。真正 AI 出題的 provider adapter、prompt builder 與 JSON 驗證位於 `src/providers`、`src/features/quiz-generation` 和 `src/domain`，可在供應商允許瀏覽器 CORS 時接上。
