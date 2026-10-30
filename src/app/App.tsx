@@ -278,7 +278,10 @@ function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
   const zoneItems: Record<PairZone, string[]> = { unmatched: [...new Set([...zones.unmatched, ...pairs.filter(pair => pair.status === 'missing_submission' && pair.key?.file_name).map(pair => pair.key!.file_name)])], student: zones.student, unknown: [...new Set([...zones.unknown, ...files.filter(file => file.kind === 'invalid').map(file => file.file_name)])] }
   const zoneDefinitions: { id: PairZone; label: string; hint: string }[] = [{ id: 'unmatched', label: '沒有配對的答案', hint: '將參考答案拖到學生列。' }, { id: 'student', label: '學生回答', hint: '暫放學生交卷檔。' }, { id: 'unknown', label: '無法分辨是答案或回答的資料', hint: '檢查檔案格式或內容。' }]
   const fileKindLabel = (kind: GradingFileKind) => kind === 'submission' ? '學生作答' : kind === 'key' ? '參考答案' : kind === 'exam' ? '試卷' : '無法辨識'
-  const pairedFileNames = new Set(pairs.flatMap(pair => [pair.submission?.file_name, pair.key?.file_name].filter((name): name is string => Boolean(name))))
+  // A file is paired only when its current row has a complete, unambiguous match.
+  // Keeping incomplete rows red makes an answer file without a student submission
+  // (or a submission without its key) immediately visible in the import table.
+  const pairedFileNames = new Set(pairs.filter(pair => pair.status === 'matched').flatMap(pair => [pair.submission?.file_name, pair.key?.file_name].filter((name): name is string => Boolean(name))))
   return <>
     <section className="panel grade-hero"><div><span className="hero-kicker">MATCH → GRADE → REPORT</span><h2>批次匯入作答與參考答案</h2><p>一次拖入多份作答 JSON 或教師答案 HTML，系統依檔名與識別欄位配對；匯入後不會立即批改。</p></div></section>
     <section className={`dropzone ${drag ? 'drag' : ''}`} onDragOver={event => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={event => { event.preventDefault(); setDrag(false); void importFiles(event.dataTransfer.files) }}><div className="upload-icon">↑</div><h2>拖曳作答與參考答案到這裡</h2><p>支援學生交卷 JSON、教師答案 JSON 或 _Teacher.htm；可一次選取或拖曳多個檔案。</p><label className="primary-button">選擇檔案<input type="file" accept=".json,.htm,.html,application/json,text/html" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files) }} /></label></section>
