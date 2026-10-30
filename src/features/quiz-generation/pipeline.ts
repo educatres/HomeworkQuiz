@@ -32,7 +32,7 @@ function sourceRefsOf(value: unknown, validBlockIds: Set<string>, index: number)
 
 function validateGeneratedItem(raw: unknown, expectedType: QuestionType, expectedLevel: Level, validBlockIds: Set<string>, index: number) {
   if (!isRecord(raw)) throw new Error(`第 ${index + 1} 題不是物件`)
-  if (typeof raw.question_id !== 'string' || !/^Q\d{3,}$/.test(raw.question_id)) throw new Error(`第 ${index + 1} 題 question_id 格式無效`)
+  if (typeof raw.question_id !== 'string' || !/^Q\d{2,}$/.test(raw.question_id)) throw new Error(`第 ${index + 1} 題 question_id 格式無效`)
   if (raw.type !== expectedType || !QUESTION_TYPES.includes(raw.type)) throw new Error(`第 ${index + 1} 題 type 不符合要求`)
   if (raw.level !== expectedLevel || !LEVELS.includes(raw.level)) throw new Error(`第 ${index + 1} 題 level 不符合要求`)
   if (!DIFFICULTIES.includes(raw.difficulty)) throw new Error(`第 ${index + 1} 題 difficulty 無效`)
@@ -66,7 +66,7 @@ export async function generateQuestionsByPlan(source: SourceDocument, plan: Batc
     if (!Array.isArray(data.questions) || data.questions.length !== count) throw new Error(`AI 回應題數不符：要求 ${count} 題，收到 ${Array.isArray(data.questions) ? data.questions.length : 0} 題`)
     data.questions.forEach((item: unknown, index: number) => {
       const validated = validateGeneratedItem(item, questionType, level, validBlockIds, index); const raw = validated.raw
-      const questionId = `Q${String(questions.length + 1).padStart(3, '0')}`
+      const questionId = `Q${String(questions.length + 1).padStart(2, '0')}`
       const options = questionType === 'short_answer' ? undefined : raw.options.map((option: any) => ({ id: String(option.id), text: String(option.text) }))
       const question: PublicQuestion = { question_id: questionId, type: questionType, level, difficulty: raw.difficulty as Difficulty, question: raw.question, options, points: 1 }
       questions.push(question); keys.push({ question_id: questionId, answer: raw.answer, explanation: raw.explanation, concept: raw.concept, source_refs: validated.source_refs, rubric: questionType === 'short_answer' ? raw.rubric as RubricCriterion[] : undefined, review_status: 'draft' })

@@ -209,6 +209,12 @@ function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
   const [zones, setZones] = useState<Record<PairZone, string[]>>({ unmatched: [], student: [], unknown: [] })
   const [teacherOverrides, setTeacherOverrides] = useState<Record<string, Record<string, TeacherOverride>>>({})
   const [reviewDraft, setReviewDraft] = useState<ReviewDraft | null>(null)
+  useEffect(() => {
+    if (!reviewDraft) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [reviewDraft])
   const basePairs = buildGradingPairs(files, bundles)
   const fileMap = new Map(files.map(file => [file.file_name, file]))
   const released = new Set(releasedFiles)
