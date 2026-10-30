@@ -4,7 +4,7 @@ import { clearKeys, DEFAULT_BASE_URLS, DEFAULT_SETTINGS, loadKeys, loadSettings,
 import { putRecord } from '../persistence/indexedDb'
 import { makeBlocks, parseFile, guessStudentId, SUPPORTED_EXTENSIONS } from '../parsers/text'
 import { parseArchive } from '../parsers/archive'
-import type { BatchPlan, Level, QuestionType, QuizBundle, SourceDocument, StudentExam, StudentRecord, StudentSubmission } from '../domain/types'
+import type { BatchPlan, Level, QuestionType, QuizBundle, SourceDocument, StudentExam, StudentRecord, StudentSubmission, TeacherAnswerKey } from '../domain/types'
 import { DEFAULT_PLAN } from '../domain/types'
 import { makeDemoBundle } from '../features/quiz-generation/mockGeneration'
 import { generateExamWithProvider } from '../features/quiz-generation/pipeline'
@@ -132,4 +132,119 @@ function QuizScreen({ examRows, onRetryExam, onDownloadExam, ...panelProps }: Qu
 
 function QuizPanel({ plan, updatePlan, records, bundles, busy, onGenerate, onStudentZip, onTeacherZip }: { plan: BatchPlan; updatePlan: <K extends keyof BatchPlan>(key: K, value: BatchPlan[K]) => void; records: StudentRecord[]; bundles: QuizBundle[]; busy: boolean; onGenerate: () => void; onStudentZip: () => void; onTeacherZip: () => void }) { const [selected, setSelected] = useState(0); const [showReview, setShowReview] = useState(false); const [planOpen, setPlanOpen] = useState(true); const current = bundles[selected]; const startGenerate = () => { setPlanOpen(false); onGenerate() }; const planInputs = [{ key: 'course_title', label: '課程名稱', placeholder: '例如：資料結構' }, { key: 'assignment_title', label: '作業名稱', placeholder: '例如：期中專題' }, { key: 'batch_id', label: '批次 ID', placeholder: 'B-20261030' }] as const; const typeControls: { key: QuestionType; label: string }[] = [{ key: 'single_choice', label: '單選題' }, { key: 'multiple_choice', label: '複選題' }, { key: 'short_answer', label: '簡答題' }]; const levelControls: { key: Level; label: string }[] = [{ key: 'comprehension', label: '理解' }, { key: 'reasoning', label: '推理' }, { key: 'design_tradeoff', label: '設計取捨' }]; return <>{planOpen ? <section className="panel plan-panel"><div className="panel-title"><div><h2>命題方向</h2><p>調整題型配比、理解層次與總配分，再開始建立題目。百分比會以最大餘數法換算成精確題數。</p></div><span className="tag">{records.filter(r => r.status === 'ready').length} 份可處理</span></div><div className="form-grid">{planInputs.map(x => <label className="field" key={x.key}><span>{x.label}</span><input value={plan[x.key] as string} placeholder={x.placeholder} onChange={e => updatePlan(x.key, e.target.value)} /></label>)}<label className="field"><span>題數</span><select value={plan.question_count} onChange={e => updatePlan('question_count', Number(e.target.value))}>{[2, 5, 8, 10, 12, 15].map(n => <option key={n}>{n}</option>)}</select></label><label className="field"><span>語言</span><select value={plan.language} onChange={e => updatePlan('language', e.target.value as BatchPlan['language'])}><option value="zh-TW">繁體中文</option><option value="en">English</option></select></label><label className="field"><span>總配分</span><input type="number" min="1" max="1000" step="5" value={plan.total_points} onChange={e => updatePlan('total_points', Math.max(1, Number(e.target.value) || 1))} /></label></div><div className="plan-options"><div className="weight-editor"><h3>題型配比</h3><div className="weight-fields">{typeControls.map(item => <WeightField key={item.key} label={item.label} value={plan.type_weights[item.key]} onChange={value => updatePlan('type_weights', { ...plan.type_weights, [item.key]: value })} />)}</div><small>目前合計 {sumWeights(plan.type_weights)}%，生成時會依比例正規化。</small></div><div className="weight-editor"><h3>理解層次</h3><div className="weight-fields">{levelControls.map(item => <WeightField key={item.key} label={item.label} value={plan.level_weights[item.key]} onChange={value => updatePlan('level_weights', { ...plan.level_weights, [item.key]: value })} />)}</div><small>目前合計 {sumWeights(plan.level_weights)}%，可輸入 0 代表不出該層次。</small></div></div><div className="distribution"><div><b>題型配比</b><span>{typeControls.map(item => item.label + ' ' + plan.type_weights[item.key] + '%').join('　')}</span></div><div><b>理解層次</b><span>{levelControls.map(item => item.label + ' ' + plan.level_weights[item.key] + '%').join('　')}</span></div><div><b>配分</b><span>總分 {plan.total_points}，每題依題數平均分配，最後一題補足小數差額</span></div></div><button className="primary-button wide" onClick={startGenerate} disabled={busy || !records.some(r => r.status === 'ready')}>{busy ? '建立中…' : bundles.length ? '重新建立試卷' : '開始建立試卷'}</button></section> : <button className="panel plan-collapsed-button" onClick={() => setPlanOpen(true)}>命題方向</button>}{bundles.length > 0 && <><div className="review-toggle"><button className="ghost-button" onClick={() => setShowReview(value => !value)}>{showReview ? '隱藏逐人審題' : '顯示逐人審題'}</button></div>{showReview && bundles.length > 0 && <section className="review-layout"><div className="panel student-list"><div className="panel-title"><div><h2>逐人審題</h2><p>學生端預覽不會顯示 key。</p></div></div>{bundles.map((b, i) => <button className={`student-item ${i === selected ? 'selected' : ''}`} key={b.exam.student_id} onClick={() => setSelected(i)}><span>{b.exam.student_id}</span><small>{b.exam.questions.length} 題 · {b.exam.public_quiz_hash.slice(0, 8)}</small><b>{b.exam.total_points}</b></button>)}</div><div className="panel question-review">{current ? <><div className="review-head"><div><span className="tag">{current.exam.student_id}</span><h2>{current.exam.assignment_title || '未命名作業'}</h2></div><span className="hash">hash {current.exam.public_quiz_hash.slice(0, 12)}…</span></div><div className="question-list">{current.exam.questions.map((q, i) => <article className="question-card" key={q.question_id}><div className="q-meta"><b>{q.question_id}</b><span>{q.type === 'single_choice' ? '單選' : q.type === 'multiple_choice' ? '複選' : '簡答'} · {q.level}</span><strong>{q.points} 分</strong></div><h3>{i + 1}. {q.question}</h3>{q.options && <div className="options-preview">{q.options.map(o => <span key={o.id}><b>{o.id}</b>{o.text}</span>)}</div>}<small className="muted">教師 key 與來源引用已獨立保存，不會寫入學生 HTML。</small></article>)}</div></> : <div className="empty-state">選擇一位學生查看試卷。</div>}</div></section>}</>}</> }
 
-function GradingPanel({ bundles }: { bundles: QuizBundle[] }) { const [results, setResults] = useState<{ student: string; score: number; max: number; status: string }[]>([]); const [submissions, setSubmissions] = useState<StudentSubmission[]>([]); const [message, setMessage] = useState(''); async function importSubmissions(files: FileList | null) { if (!files) return; const parsed: StudentSubmission[] = []; for (const file of [...files]) { try { const value = JSON.parse(await file.text()) as StudentSubmission; if (value.schema_version === '1.0' && Array.isArray(value.answers)) parsed.push(value) } catch { setMessage(`${file.name} 不是可讀取的 JSON，已略過。`) } } setSubmissions(current => [...current, ...parsed]); setMessage(`已載入 ${parsed.length} 份作答；配對依 batch/student/quiz/hash，不依上傳順序。`) } function runDemo() { const rows = bundles.map(b => { const submission = submissions.find(s => s.batch_id === b.exam.batch_id && s.student_id === b.exam.student_id && s.quiz_id === b.exam.quiz_id) ?? { schema_version: '1.0' as const, batch_id: b.exam.batch_id, student_id: b.exam.student_id, quiz_id: b.exam.quiz_id, exam_version: b.exam.exam_version, public_quiz_hash: b.exam.public_quiz_hash, answers: [] }; const result = gradeObjective(b.exam, b.key, submission); return { student: b.exam.student_id, score: result.total_score, max: result.max_score, status: result.status } }); setResults(rows); setMessage('已用本機規則驗證選擇題；問答題、版本不符與缺少作答會列為需覆核。') } return <><section className="panel grade-hero"><div><span className="hero-kicker">MATCH → GRADE → REVIEW</span><h2>答案包與作答檔以完整識別欄位配對</h2><p>不依姓名或上傳順序猜配。hash、exam_version 或 question_id 不相符時，保留人工處理狀態。</p></div><button className="primary-button" onClick={runDemo} disabled={!bundles.length}>執行本機驗證</button></section><section className="panel"><div className="panel-title"><div><h2>匯入作答</h2><p>JSON 是唯一保證完整無損的批改輸入；PDF 掃描檔不會被猜測配對。</p></div><label className="ghost-button">選擇 answers.json<input type="file" accept=".json,application/json" multiple hidden onChange={e => importSubmissions(e.target.files)} /></label></div>{submissions.length ? <div className="notice">已載入 {submissions.length} 份作答檔。</div> : <div className="empty-state">尚未匯入學生作答。可先用學生 HTML 產生的 answers.json 測試。</div>}</section><section className="panel"><div className="panel-title"><div><h2>批改結果</h2><p>{message || '教師 key 來自本次審題結果；匯入答案後執行本機驗證。'}</p></div></div>{results.length ? <div className="result-table"><div className="file-row header"><span>學生</span><span>分數</span><span>狀態</span><span>說明</span></div>{results.map(r => <div className="file-row" key={r.student}><span>{r.student}</span><strong>{r.score} / {r.max}</strong><Status status={r.status === 'auto_graded' ? 'ready' : 'needs_review'} /><span className="muted">{r.status === 'auto_graded' ? '已完成客觀題計分' : '含需人工覆核項目'}</span></div>)}</div> : <div className="empty-state">尚無批改資料。</div>}</section></> }
+type GradingFileKind = 'submission' | 'key' | 'exam' | 'invalid'
+type GradingFile = { file_name: string; kind: GradingFileKind; filename_key: string; student_id?: string; data?: StudentSubmission | TeacherAnswerKey | StudentExam; error?: string }
+type GradingPair = { id: string; student_id: string; submission?: GradingFile; key?: GradingFile; exam?: StudentExam; fallbackKey?: TeacherAnswerKey; status: 'matched' | 'missing_key' | 'missing_submission' | 'missing_exam' | 'duplicate'; message: string }
+type GradeReportRow = { student_id: string; score?: number; max?: number; status: string; message: string; submission_file: string; key_file: string }
+
+function gradingFilenameKey(fileName: string) {
+  let stem = (fileName.split(/[\\/]/).pop() ?? fileName).replace(/\.(json|htm|html)$/i, '')
+  for (let i = 0; i < 2; i += 1) stem = stem.replace(/(?:[._-](?:q|a|key|answer|answers|submission|submit))$/i, '')
+  return stem.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+function gradingData(value: GradingFile['data']) { return value as Partial<StudentSubmission & TeacherAnswerKey & StudentExam> | undefined }
+function gradingFileMatches(a: GradingFile, b: GradingFile) {
+  if (a.filename_key && a.filename_key === b.filename_key) return true
+  const left = gradingData(a.data); const right = gradingData(b.data)
+  if (!left || !right || !left.student_id || !right.student_id || left.student_id !== right.student_id) return false
+  if (left.quiz_id && right.quiz_id) return left.quiz_id === right.quiz_id && (!left.batch_id || !right.batch_id || left.batch_id === right.batch_id)
+  return true
+}
+function classifyGradingJson(value: unknown): { kind: GradingFileKind; data?: GradingFile['data']; error?: string } {
+  if (!value || typeof value !== 'object') return { kind: 'invalid', error: 'JSON 不是物件格式。' }
+  const item = value as Record<string, unknown>
+  if (item.schema_version !== '1.0' || typeof item.student_id !== 'string' || typeof item.quiz_id !== 'string') return { kind: 'invalid', error: '缺少 schema_version、student_id 或 quiz_id。' }
+  if (Array.isArray(item.answers)) return { kind: 'submission', data: value as StudentSubmission }
+  if (Array.isArray(item.questions) && typeof item.source_sha256 === 'string') return { kind: 'key', data: value as TeacherAnswerKey }
+  if (Array.isArray(item.questions) && typeof item.course_title === 'string') return { kind: 'exam', data: value as StudentExam }
+  return { kind: 'invalid', error: '無法辨識為學生作答、教師答案或試卷 JSON。' }
+}
+function bundleMatchesFile(file: GradingFile, bundle: QuizBundle) {
+  const data = gradingData(file.data)
+  if (data?.student_id && data.student_id !== bundle.exam.student_id) return false
+  if (data?.quiz_id && data.quiz_id !== bundle.exam.quiz_id) return false
+  const studentKey = bundle.exam.student_id.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  return file.filename_key === gradingFilenameKey(`${bundle.exam.student_id}_${bundle.exam.quiz_id}`) || file.filename_key.startsWith(`${studentKey}_`) || data?.student_id === bundle.exam.student_id
+}
+function buildGradingPairs(files: GradingFile[], bundles: QuizBundle[]): GradingPair[] {
+  const submissions = files.filter(file => file.kind === 'submission')
+  const keys = files.filter(file => file.kind === 'key')
+  const exams = files.filter(file => file.kind === 'exam')
+  const usedKeys = new Set<string>()
+  const pairs: GradingPair[] = submissions.map((submission, index) => {
+    const matches = keys.filter(key => gradingFileMatches(submission, key))
+    const key = matches[0]
+    if (key) usedKeys.add(key.file_name)
+    const examFile = exams.find(exam => gradingFileMatches(submission, exam))
+    const bundle = bundles.find(item => bundleMatchesFile(submission, item))
+    const exam = (examFile?.data && examFile.kind === 'exam' ? examFile.data : bundle?.exam) as StudentExam | undefined
+    const fallbackKey = !key ? bundle?.key : undefined
+    const data = gradingData(submission.data)
+    const student_id = data?.student_id || gradingData(key?.data)?.student_id || exam?.student_id || submission.filename_key
+    const status = matches.length > 1 ? 'duplicate' : !exam ? 'missing_exam' : !key && !fallbackKey ? 'missing_key' : 'matched'
+    const message = status === 'matched' ? '可批改' : status === 'duplicate' ? '同一作答找到多份參考答案。' : status === 'missing_exam' ? '找不到對應試卷，請先在本批次產生試卷或匯入試卷 JSON。' : '找不到參考答案。'
+    return { id: `${submission.filename_key}-${index}`, student_id, submission, key, exam, fallbackKey, status, message }
+  })
+  keys.forEach((key, index) => { if (!usedKeys.has(key.file_name)) { const data = gradingData(key.data); pairs.push({ id: `${key.filename_key}-key-${index}`, student_id: data?.student_id || key.filename_key, key, status: 'missing_submission', message: '找不到對應學生作答。' }) } })
+  bundles.forEach((bundle, index) => { if (!pairs.some(pair => pair.student_id === bundle.exam.student_id)) pairs.push({ id: `${bundle.exam.student_id}-bundle-${index}`, student_id: bundle.exam.student_id, exam: bundle.exam, fallbackKey: bundle.key, status: 'missing_submission', message: '找不到對應學生作答。' }) })
+  return pairs
+}
+function gradingStatusLabel(status: GradingPair['status']) { return { matched: '可批改', missing_key: '缺少參考答案', missing_submission: '缺少作答', missing_exam: '缺少試卷', duplicate: '配對不唯一' }[status] }
+function csvCell(value: string | number) { return `"${String(value).replace(/"/g, '""')}"` }
+
+function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
+  const [files, setFiles] = useState<GradingFile[]>([])
+  const [results, setResults] = useState<GradeReportRow[]>([])
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [drag, setDrag] = useState(false)
+  const pairs = buildGradingPairs(files, bundles)
+  async function importFiles(input: FileList | File[] | null) {
+    if (!input) return
+    const parsed: GradingFile[] = []
+    for (const file of [...input]) {
+      const base = { file_name: file.name, kind: 'invalid' as GradingFileKind, filename_key: gradingFilenameKey(file.name) }
+      if (!/\.(json|htm|html)$/i.test(file.name)) { parsed.push({ ...base, error: '請匯入 JSON 或教師答案 HTML 檔案。' }); continue }
+      try {
+        const text = await file.text()
+        let value: unknown
+        if (/\.json$/i.test(file.name)) value = JSON.parse(text)
+        else {
+          const document = new DOMParser().parseFromString(text, 'text/html')
+          const embeddedKey = document.querySelector('#teacher-key')?.textContent
+          if (!embeddedKey) throw new Error('教師答案 HTML 沒有可供批改的參考答案資料。')
+          value = JSON.parse(embeddedKey)
+        }
+        const classified = classifyGradingJson(value)
+        const data = gradingData(classified.data)
+        parsed.push({ ...base, kind: classified.kind, data: classified.data, student_id: data?.student_id, error: classified.error })
+      } catch { parsed.push({ ...base, error: 'JSON 解析失敗。' }) }
+    }
+    setFiles(current => [...current, ...parsed])
+    setResults([])
+    setMessage(`已匯入 ${parsed.length} 個檔案；請確認檔名配對後按「開始批改」。`)
+  }
+  function runGrading() {
+    setBusy(true)
+    const report = pairs.map(pair => {
+      const submission = pair.submission?.data as StudentSubmission | undefined
+      const key = (pair.key?.data as TeacherAnswerKey | undefined) ?? pair.fallbackKey
+      if (pair.status !== 'matched' || !pair.exam || !submission || !key) return { student_id: pair.student_id, status: gradingStatusLabel(pair.status), message: pair.message, submission_file: pair.submission?.file_name || '—', key_file: pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—') }
+      const result = gradeObjective(pair.exam, key, submission)
+      return { student_id: pair.student_id, score: result.total_score, max: result.max_score, status: result.status === 'auto_graded' ? '已完成' : '需人工覆核', message: result.status === 'auto_graded' ? '選擇題已完成本機計分。' : '含簡答題、版本不符或其他需覆核項目。', submission_file: pair.submission?.file_name || '—', key_file: pair.key?.file_name || '目前批次答案' }
+    })
+    setResults(report); setBusy(false); setMessage(`批改完成，共產生 ${report.length} 位學生的分數報告。`)
+  }
+  function downloadReport() {
+    const header = ['學生', '分數', '滿分', '狀態', '作答檔', '參考答案']
+    const rows = results.map(row => [row.student_id, row.score ?? '', row.max ?? '', row.status, row.submission_file, row.key_file].map(csvCell).join(','))
+    downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `grading_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8')
+  }
+  return <>
+    <section className="panel grade-hero"><div><span className="hero-kicker">MATCH → GRADE → REPORT</span><h2>批次匯入作答與參考答案</h2><p>一次拖入多份作答 JSON 或教師答案 HTML，系統依檔名與識別欄位配對；匯入後不會立即批改。</p></div><button className="primary-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>{busy ? '批改中…' : '批改'}</button></section>
+    <section className={`dropzone ${drag ? 'drag' : ''}`} onDragOver={event => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={event => { event.preventDefault(); setDrag(false); void importFiles(event.dataTransfer.files) }}><div className="upload-icon">↑</div><h2>拖曳作答與參考答案到這裡</h2><p>支援學生交卷 JSON、教師答案 JSON 或 .A.htm；可一次選取或拖曳多個檔案。</p><label className="primary-button">選擇檔案<input type="file" accept=".json,.htm,.html,application/json,text/html" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files) }} /></label></section>
+    <section className="panel"><div className="panel-title"><div><h2>匯入檔案 <span className="count">{files.length}</span></h2><p>檔名相同或可由學生 ID／quiz ID 對應的檔案會自動配對。</p></div><button className="ghost-button" disabled={!files.length || busy} onClick={() => { setFiles([]); setResults([]); setMessage('') }}>清空清單</button></div>{files.length ? <div className="file-table"><div className="file-row header"><span>檔案</span><span>類型</span><span>學生</span><span>狀態</span></div>{files.map((file, index) => <div className="file-row" key={`${file.file_name}-${index}`}><span className="file-name">{file.file_name}</span><span>{file.kind === 'submission' ? '學生作答' : file.kind === 'key' ? '參考答案' : file.kind === 'exam' ? '試卷' : '無法辨識'}</span><span>{file.student_id || '—'}</span><span className="muted">{file.error || '已載入'}</span></div>)}</div> : <div className="empty-state">尚未匯入檔案。</div>}</section>
+    <section className="panel"><div className="panel-title"><div><h2>配對檢查</h2><p>{message || '匯入後請確認作答與參考答案的配對狀態。'}</p></div></div>{pairs.length ? <div className="grading-pair-table"><div className="grading-pair-row header"><span>學生</span><span>作答檔</span><span>參考答案</span><span>狀態</span></div>{pairs.map(pair => <div className="grading-pair-row" key={pair.id}><span>{pair.student_id}</span><span>{pair.submission?.file_name || '—'}</span><span>{pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—')}</span><span className={pair.status === 'matched' ? 'match-ok' : 'match-warning'}>{gradingStatusLabel(pair.status)}</span></div>)}</div> : <div className="empty-state">匯入檔案後會在這裡顯示配對結果。</div>}</section>
+    {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><button className="ghost-button" onClick={downloadReport}>下載分數報告 CSV</button></div><div className="grading-report-table"><div className="grading-report-row header"><span>學生</span><span>分數</span><span>狀態</span><span>作答檔</span><span>參考答案</span></div>{results.map((row, index) => <div className="grading-report-row" key={`${row.student_id}-${index}`}><span>{row.student_id}</span><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong><span>{row.status}</span><span title={row.submission_file}>{row.submission_file}</span><span title={row.key_file}>{row.key_file}</span></div>)}</div></section>}
+  </>
+}
