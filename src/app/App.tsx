@@ -136,6 +136,9 @@ type GradingFileKind = 'submission' | 'key' | 'exam' | 'invalid'
 type GradingFile = { file_name: string; kind: GradingFileKind; filename_key: string; student_id?: string; data?: StudentSubmission | TeacherAnswerKey | StudentExam; embedded_exam?: StudentExam; error?: string }
 type GradingPair = { id: string; student_id: string; submission?: GradingFile; key?: GradingFile; exam?: StudentExam; fallbackKey?: TeacherAnswerKey; status: 'matched' | 'missing_key' | 'missing_submission' | 'missing_exam' | 'duplicate'; message: string }
 type GradeReportRow = { pair_id: string; student_id: string; score?: number; max?: number; status: string; message: string }
+type TeacherOverride = { score?: number; feedback?: string }
+type ReviewRow = { question_id: string; type: QuestionType; question: string; student_answer: string; reference_answer: string; suggestion: string; ai_score: number; teacher_score: string; max_points: number; feedback: string; ai_feedback: string }
+type ReviewDraft = { pair_id: string; student_id: string; rows: ReviewRow[] }
 
 function gradingFilenameKey(fileName: string) {
   let stem = (fileName.split(/[\\/]/).pop() ?? fileName).replace(/\.(json|htm|html)$/i, '')
@@ -204,6 +207,8 @@ function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
   const [assignments, setAssignments] = useState<Record<string, PairAssignment>>({})
   const [releasedFiles, setReleasedFiles] = useState<string[]>([])
   const [zones, setZones] = useState<Record<PairZone, string[]>>({ unmatched: [], student: [], unknown: [] })
+  const [teacherOverrides, setTeacherOverrides] = useState<Record<string, Record<string, TeacherOverride>>>({})
+  const [reviewDraft, setReviewDraft] = useState<ReviewDraft | null>(null)
   const basePairs = buildGradingPairs(files, bundles)
   const fileMap = new Map(files.map(file => [file.file_name, file]))
   const released = new Set(releasedFiles)
@@ -239,13 +244,13 @@ function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
     const existing = slot === 'key' ? currentPair?.key?.file_name : currentPair?.submission?.file_name
     if (existing && existing !== fileName) { setReleasedFiles(current => current.includes(existing) ? current : [...current, existing]); clearAssignment(existing, nextAssignments) }
     nextAssignments[pair.id] = { ...(nextAssignments[pair.id] ?? {}), [slot]: fileName }
-    setAssignments(nextAssignments); setReleasedFiles(current => current.includes(fileName) ? current : [...current, fileName]); removeFromZones(fileName); setResults([]); setMessage(`已將 ${fileName} 放入 ${pair.student_id} 的${slot === 'key' ? '參考答案' : '作答檔'}。`)
+    setAssignments(nextAssignments); setReleasedFiles(current => current.includes(fileName) ? current : [...current, fileName]); removeFromZones(fileName); setResults([]); setReviewDraft(null); setMessage(`已將 ${fileName} 放入 ${pair.student_id} 的${slot === 'key' ? '參考答案' : '作答檔'}。`)
   }
   function moveToZone(event: React.DragEvent, zone: PairZone) {
     event.preventDefault(); const fileName = draggedFile(event); const file = fileMap.get(fileName); if (!fileName || !file) return
     const nextAssignments: Record<string, PairAssignment> = Object.fromEntries(Object.entries(assignments).map(([id, value]) => [id, { ...value }]))
     clearAssignment(fileName, nextAssignments)
-    setAssignments(nextAssignments); setReleasedFiles(current => current.includes(fileName) ? current : [...current, fileName]); removeFromZones(fileName); setZones(current => ({ ...current, [zone]: [...current[zone].filter(item => item !== fileName), fileName] })); setResults([]); setMessage(`已將 ${fileName} 移到「${zone === 'unmatched' ? '沒有配對的答案' : zone === 'student' ? '學生回答' : '無法分辨是答案或回答的資料'}」。`)
+    setAssignments(nextAssignments); setReleasedFiles(current => current.includes(fileName) ? current : [...current, fileName]); removeFromZones(fileName); setZones(current => ({ ...current, [zone]: [...current[zone].filter(item => item !== fileName), fileName] })); setResults([]); setReviewDraft(null); setMessage(`已將 ${fileName} 移到「${zone === 'unmatched' ? '沒有配對的答案' : zone === 'student' ? '學生回答' : '無法分辨是答案或回答的資料'}」。`)
   }
   async function importFiles(input: FileList | File[] | null) {
     if (!input) return
@@ -262,29 +267,61 @@ function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
         parsed.push({ ...base, kind: classified.kind, data: classified.data, embedded_exam: embeddedExam, student_id: data?.student_id, error: classified.error })
       } catch { parsed.push({ ...base, error: '檔案解析失敗。' }) }
     }
-    setFiles(current => [...current, ...parsed]); setResults([]); setZones(current => ({ ...current, unknown: [...current.unknown, ...parsed.filter(file => file.kind === 'invalid').map(file => file.file_name)] })); setMessage(`已匯入 ${parsed.length} 個檔案；請確認配對後按「批改」。`)
+    setFiles(current => [...current, ...parsed]); setResults([]); setTeacherOverrides({}); setReviewDraft(null); setZones(current => ({ ...current, unknown: [...current.unknown, ...parsed.filter(file => file.kind === 'invalid').map(file => file.file_name)] })); setMessage(`已匯入 ${parsed.length} 個檔案；請確認配對後按「批改」。`)
   }
-  function makeReport(pair: GradingPair): GradeReportRow {
+  function answerText(value: string | string[] | undefined) { return value === undefined || value === '' || (Array.isArray(value) && value.length === 0) ? '未作答' : Array.isArray(value) ? value.join('、') : value }
+  function buildReviewDraft(pair: GradingPair): ReviewDraft | null {
+    const submission = pair.submission?.data as StudentSubmission | undefined; const key = (pair.key?.data as TeacherAnswerKey | undefined) ?? pair.fallbackKey
+    if (pair.status !== 'matched' || !pair.exam || !submission || !key) return null
+    const result = gradeObjective(pair.exam, key, submission)
+    const keyMap = new Map(key.questions.map(question => [question.question_id, question]))
+    const answerMap = new Map(submission.answers.map(answer => [answer.question_id, answer.value]))
+    const overrides = teacherOverrides[pair.id] ?? {}
+    const rows = pair.exam.questions.map(question => {
+      const graded = result.per_question.find(item => item.question_id === question.question_id)
+      const teacher = overrides[question.question_id]
+      const aiFeedback = graded?.feedback ?? ''
+      return { question_id: question.question_id, type: question.type, question: question.question, student_answer: answerText(answerMap.get(question.question_id)), reference_answer: answerText(keyMap.get(question.question_id)?.answer), suggestion: question.type === 'short_answer' ? aiFeedback : '', ai_score: graded?.earned_points ?? 0, teacher_score: teacher?.score === undefined ? '' : String(teacher.score), max_points: question.points, feedback: teacher?.feedback ?? aiFeedback, ai_feedback: aiFeedback }
+    })
+    return { pair_id: pair.id, student_id: pair.student_id, rows }
+  }
+  function makeReport(pair: GradingPair, overrideMap: Record<string, TeacherOverride> = teacherOverrides[pair.id] ?? {}): GradeReportRow {
     const submission = pair.submission?.data as StudentSubmission | undefined; const key = (pair.key?.data as TeacherAnswerKey | undefined) ?? pair.fallbackKey
     if (pair.status !== 'matched' || !pair.exam || !submission || !key) return { pair_id: pair.id, student_id: pair.student_id, status: gradingStatusLabel(pair.status), message: pair.message }
     const result = gradeObjective(pair.exam, key, submission)
     const keyMap = new Map(key.questions.map(question => [question.question_id, question]))
-    const correct = result.per_question.filter(question => !question.review_required && question.earned_points >= question.max_points).length
-    const incorrect = result.per_question.filter(question => !question.review_required && question.earned_points < question.max_points).length
-    const review = result.per_question.filter(question => question.review_required).length
-    const wrongDetails = result.per_question.filter(question => !question.review_required && question.earned_points < question.max_points).map(question => `${question.question_id}（${keyMap.get(question.question_id)?.concept || '未分類'}）`)
-    const reviewDetails = result.per_question.filter(question => question.review_required).map(question => `${question.question_id}（${keyMap.get(question.question_id)?.concept || '未分類'}）`)
-    const rate = result.max_score > 0 ? result.total_score / result.max_score * 100 : 0
+    const effective = result.per_question.map(question => ({ ...question, earned_points: overrideMap[question.question_id]?.score ?? question.earned_points, feedback: overrideMap[question.question_id]?.feedback ?? question.feedback, review_required: overrideMap[question.question_id]?.score === undefined ? question.review_required : false }))
+    const correct = effective.filter(question => !question.review_required && question.earned_points >= question.max_points).length
+    const incorrect = effective.filter(question => !question.review_required && question.earned_points < question.max_points).length
+    const review = effective.filter(question => question.review_required).length
+    const wrongDetails = effective.filter(question => !question.review_required && question.earned_points < question.max_points).map(question => `${question.question_id}（${keyMap.get(question.question_id)?.concept || '未分類'}）`)
+    const reviewDetails = effective.filter(question => question.review_required).map(question => `${question.question_id}（${keyMap.get(question.question_id)?.concept || '未分類'}）`)
+    const totalScore = effective.reduce((sum, question) => sum + question.earned_points, 0)
+    const rate = result.max_score > 0 ? totalScore / result.max_score * 100 : 0
     const understanding = review > 0 ? '待人工覆核' : masteryLabel(rate)
     const detail = [`答對 ${correct} 題、答錯 ${incorrect} 題、待人工覆核 ${review} 題`, `理解程度：${understanding}（${rate.toFixed(0)}%）`]
     if (wrongDetails.length) detail.push(`錯題類別：${wrongDetails.join('、')}`)
     if (reviewDetails.length) detail.push(`待覆核題目：${reviewDetails.join('、')}`)
     const message = detail.join('；') + '。'
-    return { pair_id: pair.id, student_id: pair.student_id, score: result.total_score, max: result.max_score, status: result.status === 'auto_graded' ? '已完成' : '需人工覆核', message }
+    return { pair_id: pair.id, student_id: pair.student_id, score: totalScore, max: result.max_score, status: review ? '需人工覆核' : '已完成', message }
   }
-  function runGrading() { setBusy(true); setResults(pairs.map(makeReport)); setBusy(false); setMessage(`批改完成，共產生 ${pairs.length} 位學生的分數報告。`) }
+  function openReview(pair: GradingPair) { const draft = buildReviewDraft(pair); if (draft) setReviewDraft(draft) }
+  function updateReviewRow(questionId: string, field: 'teacher_score' | 'feedback', value: string) { setReviewDraft(current => current ? { ...current, rows: current.rows.map(row => row.question_id === questionId ? { ...row, [field]: value } : row) } : current) }
+  function cancelReview() { if (window.confirm('取消後，本次覆核的所有編輯與批改都會捨棄，確定要取消嗎？')) setReviewDraft(null) }
+  function confirmReview() {
+    if (!reviewDraft) return
+    const pair = pairs.find(item => item.id === reviewDraft.pair_id)
+    if (!pair) return
+    const nextOverrides: Record<string, TeacherOverride> = {}
+    reviewDraft.rows.forEach(row => { const raw = row.teacher_score.trim(); const score = raw === '' ? undefined : Math.min(row.max_points, Math.max(0, Number(raw))); nextOverrides[row.question_id] = { score: score !== undefined && Number.isFinite(score) ? score : undefined, feedback: row.feedback } })
+    setTeacherOverrides(current => ({ ...current, [reviewDraft.pair_id]: nextOverrides }))
+    const report = makeReport(pair, nextOverrides)
+    setResults(current => [...current.filter(row => row.pair_id !== pair.id), report])
+    setReviewDraft(null); setMessage(`${pair.student_id} 的覆核結果已更新。`)
+  }
+  function runGrading() { setBusy(true); setResults(pairs.map(pair => makeReport(pair))); setBusy(false); setMessage(`批改完成，共產生 ${pairs.length} 位學生的分數報告。`) }
   function gradeOne(pair: GradingPair) { if (pair.status !== 'matched') return; setBusy(true); const report = makeReport(pair); setResults(current => [...current.filter(row => row.pair_id !== pair.id), report]); setBusy(false); setMessage(`${pair.student_id} 批改完成。`) }
-  function downloadReport() { const header = ['學生', '分數', '滿分', '狀態', '學生作答與理解摘要']; const rows = results.map(row => [row.student_id, row.score ?? '', row.max ?? '', row.status, row.message].map(csvCell).join(',')); downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `grading_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8') }
+  function downloadReport() { const header = ['學生', '分數', '滿分', '學生作答與理解摘要']; const rows = results.map(row => [row.student_id, row.score ?? '', row.max ?? '', row.message].map(csvCell).join(',')); downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `grading_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8') }
   const zoneItems: Record<PairZone, string[]> = { unmatched: [...new Set([...zones.unmatched, ...pairs.filter(pair => pair.status === 'missing_submission' && pair.key?.file_name).map(pair => pair.key!.file_name)])], student: zones.student, unknown: [...new Set([...zones.unknown, ...files.filter(file => file.kind === 'invalid').map(file => file.file_name)])] }
   const zoneDefinitions: { id: PairZone; label: string; hint: string }[] = [{ id: 'unmatched', label: '沒有配對的答案', hint: '將參考答案拖到學生列。' }, { id: 'student', label: '學生回答', hint: '暫放學生交卷檔。' }, { id: 'unknown', label: '無法分辨是答案或回答的資料', hint: '檢查檔案格式或內容。' }]
   const fileKindLabel = (kind: GradingFileKind) => kind === 'submission' ? '學生作答' : kind === 'key' ? '參考答案' : kind === 'exam' ? '試卷' : '無法辨識'
@@ -295,8 +332,9 @@ function GradingPanel({ bundles }: { bundles: QuizBundle[] }) {
   return <>
     <section className="panel grade-hero"><div><span className="hero-kicker">MATCH → GRADE → REPORT</span><h2>批次匯入作答與參考答案</h2><p>一次拖入多份作答 JSON 或教師答案 HTML，系統依檔名與識別欄位配對；匯入後不會立即批改。</p></div></section>
     <section className={`dropzone ${drag ? 'drag' : ''}`} onDragOver={event => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={event => { event.preventDefault(); setDrag(false); void importFiles(event.dataTransfer.files) }}><div className="upload-icon">↑</div><h2>拖曳作答與參考答案到這裡</h2><p>支援學生交卷 JSON、教師答案 JSON 或 _Teacher.htm；可一次選取或拖曳多個檔案。</p><label className="primary-button">選擇檔案<input type="file" accept=".json,.htm,.html,application/json,text/html" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files) }} /></label></section>
-    <section className="panel"><div className="panel-title"><div><h2>匯入檔案 <span className="count">{files.length}</span></h2><p>檔名相同或可由學生 ID／quiz ID 對應的檔案會自動配對。</p></div><button className="ghost-button" disabled={!files.length || busy} onClick={() => { setFiles([]); setResults([]); setAssignments({}); setReleasedFiles([]); setZones({ unmatched: [], student: [], unknown: [] }); setMessage('') }}>清空清單</button></div>{files.length ? <div className="file-table grading-import-table"><div className="file-row header"><span>檔案</span><span>類型</span><span>學生</span><span>狀態</span></div>{files.map((file, index) => { const paired = pairedFileNames.has(file.file_name); return <div className="file-row" key={`${file.file_name}-${index}`} draggable onDragStart={event => beginDrag(event, file.file_name)}><span className="file-name">{file.file_name}</span><span>{fileKindLabel(file.kind)}</span><span>{file.student_id || '—'}</span><span className={paired ? 'file-paired' : 'file-unpaired'}>{paired ? '已配對' : '未配對'}</span></div> })}</div> : <div className="empty-state">尚未匯入檔案。</div>}</section>
+    <section className="panel"><div className="panel-title"><div><h2>匯入檔案 <span className="count">{files.length}</span></h2><p>檔名相同或可由學生 ID／quiz ID 對應的檔案會自動配對。</p></div><button className="ghost-button" disabled={!files.length || busy} onClick={() => { setFiles([]); setResults([]); setAssignments({}); setReleasedFiles([]); setTeacherOverrides({}); setReviewDraft(null); setZones({ unmatched: [], student: [], unknown: [] }); setMessage('') }}>清空清單</button></div>{files.length ? <div className="file-table grading-import-table"><div className="file-row header"><span>檔案</span><span>類型</span><span>學生</span><span>狀態</span></div>{files.map((file, index) => { const paired = pairedFileNames.has(file.file_name); return <div className="file-row" key={`${file.file_name}-${index}`} draggable onDragStart={event => beginDrag(event, file.file_name)}><span className="file-name">{file.file_name}</span><span>{fileKindLabel(file.kind)}</span><span>{file.student_id || '—'}</span><span className={paired ? 'file-paired' : 'file-unpaired'}>{paired ? '已配對' : '未配對'}</span></div> })}</div> : <div className="empty-state">尚未匯入檔案。</div>}</section>
     <section className="panel"><div className="panel-title"><div><h2>配對檢查</h2><p>{message || '可將檔案拖到學生列或下方分類區；確認後再按批改。'}</p></div><button className="primary-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>{busy ? '批改中…' : '批改'}</button></div><div className="pair-drop-zones">{zoneDefinitions.map(zone => <div className="pair-drop-zone" key={zone.id} onDragOver={event => event.preventDefault()} onDrop={event => moveToZone(event, zone.id)}><h3>{zone.label}</h3><small>{zone.hint}</small><div className="pair-drop-items">{zoneItems[zone.id].map(fileName => <span key={fileName} draggable onDragStart={event => beginDrag(event, fileName)}>{fileName}</span>)}</div></div>)}</div>{pairs.length ? <div className="grading-pair-table"><div className="grading-pair-row header"><span>學生</span><span>作答檔</span><span>參考答案</span><span>狀態</span><span>批改</span></div>{pairs.map(pair => { const report = results.find(row => row.pair_id === pair.id); return <div className="grading-pair-row" key={pair.id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const fileName = draggedFile(event); if (fileName) assignFile(fileName, pair) }}><span>{pair.student_id}</span><span className="draggable-file" draggable={!!pair.submission} onDragStart={event => pair.submission && beginDrag(event, pair.submission.file_name)}>{pair.submission?.file_name || '—'}</span><span className="draggable-file" draggable={!!pair.key} onDragStart={event => pair.key && beginDrag(event, pair.key.file_name)}>{pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—')}</span><span className={pair.status === 'matched' ? 'match-ok' : 'match-warning'}>{gradingStatusLabel(pair.status)}</span><button className="small-button" disabled={busy || pair.status !== 'matched'} onClick={() => gradeOne(pair)}>{report ? '重批' : '批改'}</button></div> })}</div> : <div className="empty-state">匯入檔案後會在這裡顯示配對結果。</div>}</section>
-    {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><div className="report-actions"><button className="ghost-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>重新批改</button><button className="ghost-button" onClick={downloadReport}>下載分數報告 CSV</button></div></div><div className="grading-report-table"><div className="grading-report-row header"><span>學生</span><span>分數</span><span>狀態</span><span>學生作答與理解摘要</span></div>{results.map((row, index) => <div className="grading-report-row" key={`${row.pair_id}-${index}`}><span>{row.student_id}</span><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong><span>{row.status}</span><span title={row.message}>{row.message}</span></div>)}</div></section>}
+    {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><div className="report-actions"><button className="ghost-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>重新批改</button><button className="ghost-button" onClick={downloadReport}>下載分數報告 CSV</button></div></div><div className="grading-report-table"><div className="grading-report-row header"><span>覆核</span><span>學生</span><span>分數</span><span>學生作答與理解摘要</span></div>{results.map((row, index) => { const pair = pairs.find(item => item.id === row.pair_id); const percentage = row.score === undefined || !row.max ? undefined : row.score / row.max * 100; const scoreTone = percentage === undefined ? 'score-none' : percentage <= 40 ? 'score-low' : percentage <= 60 ? 'score-mid' : 'score-high'; return <div className="grading-report-row" key={`${row.pair_id}-${index}`}><span><button className="small-button review-button" disabled={!pair || pair.status !== 'matched'} onClick={() => pair && openReview(pair)}>覆核</button></span><span>{row.student_id}</span><span className="score-cell"><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong>{percentage !== undefined && <i className={`score-indicator ${scoreTone}`} aria-label={`答對 ${percentage.toFixed(0)}%`} />}</span><span title={row.message}>{row.message}</span></div> })}</div></section>}
+    {reviewDraft && <section className="panel grading-review-panel"><div className="panel-title"><div><h2>覆核：{reviewDraft.student_id}</h2><p>教師打分會覆蓋 AI 分數；評語可直接編輯。選擇題的批改建議欄留白。</p></div><div className="review-actions"><button className="primary-button" onClick={confirmReview}>確認</button><button className="ghost-button" onClick={cancelReview}>取消</button></div></div><div className="grading-review-table"><div className="grading-review-row header"><span>每一題題目</span><span>學生回答</span><span>參考答案</span><span>批改建議</span><span>教師打分（註記會覆蓋 AI 評分）</span><span>重新寫評語</span></div>{reviewDraft.rows.map(row => <div className="grading-review-row" key={row.question_id}><div><b>{row.question_id}</b><p>{row.question}</p></div><div>{row.student_answer}</div><div>{row.reference_answer}</div><div>{row.suggestion}</div><div><small>AI：{row.ai_score} / {row.max_points}</small><input type="number" min="0" max={row.max_points} step="0.01" value={row.teacher_score} placeholder="留白沿用 AI" onChange={event => updateReviewRow(row.question_id, 'teacher_score', event.target.value)} /></div><textarea rows={4} value={row.feedback} onChange={event => updateReviewRow(row.question_id, 'feedback', event.target.value)} aria-label={`${row.question_id} 評語`} /></div>)}</div></section>}
   </>
 }
