@@ -11,11 +11,28 @@ describe('OpenAI-compatible provider request options', () => {
       return { ok: true, json: async () => ({ choices: [{ message: { content: '{}' } }] }), text: async () => '' } as Response
     }))
 
-    const provider = new OpenAICompatibleProvider({ provider: 'cgu', apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'luna-1' }, 'cgu')
+    const provider = new OpenAICompatibleProvider({ provider: 'cgu', apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'gpt-oss-test' }, 'cgu')
     await provider.complete('prompt')
 
     expect(requestBody).not.toHaveProperty('temperature')
     expect(requestBody?.max_completion_tokens).toBe(4096)
+  })
+
+  it('uses the CGU responses format for Luna models', async () => {
+    let requestUrl = ''
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requestUrl = String(input)
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return { ok: true, json: async () => ({ output_text: '{}' }), text: async () => '' } as Response
+    }))
+
+    const provider = new OpenAICompatibleProvider({ provider: 'cgu', apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'luna-1' }, 'cgu')
+    await provider.complete('prompt')
+
+    expect(requestUrl).toBe('https://example.test/v1/responses')
+    expect(requestBody?.max_output_tokens).toBe(4096)
+    expect(requestBody).not.toHaveProperty('temperature')
   })
 
   it('keeps low temperature for other OpenAI-compatible providers', async () => {
