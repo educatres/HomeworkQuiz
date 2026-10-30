@@ -7,7 +7,7 @@ const plan: BatchPlan = {
   batch_id: 'B-TEST', course_title: '測試課程', assignment_title: '測試作業', language: 'zh-TW', question_count: 1,
   type_weights: { single_choice: 100, multiple_choice: 0, short_answer: 0 },
   level_weights: { comprehension: 100, reasoning: 0, design_tradeoff: 0 },
-  difficulty_weights: { basic: 100, intermediate: 0, advanced: 0 }, total_points: 10,
+  difficulty_weights: { basic: 100, intermediate: 0, advanced: 0 }, total_points: 10, teacher_guidance: '',
 }
 const source: SourceDocument = { id: 'source-1', file_name: 'S001_hw.py', file_type: 'py', text: 'print("hello")', source_sha256: 'hash', blocks: [{ block_id: 'B001', text: 'print("hello")', kind: 'code', line_start: 1, line_end: 1 }], warnings: [], needs_review: false }
 
