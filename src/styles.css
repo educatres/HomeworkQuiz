@@ -22,6 +22,18 @@ body,button,input,select,textarea,small,.brand-mark,.top-status,.subtitle,.side-
 .ghost-button,.small-button,.retry-button,.download-link,.plan-collapsed-button,.hero-card button{background:#fff4c7;border-color:#eea23b;color:#8a5a12}.ghost-button:hover,.small-button:hover,.retry-button:hover,.download-link:hover,.plan-collapsed-button:hover,.hero-card button:hover{background:#ffe9a3;border-color:#dc861f;color:#754709}.plan-panel .wide{width:auto;display:inline-block}.save-model-button{margin:12px 8px 0 0}
 .provider-card:not(.selected),.student-item:not(.selected),.work-card{background:#fff4c7;border-color:#eea23b}.provider-card:not(.selected):hover,.student-item:not(.selected):hover,.work-card:hover{background:#ffe9a3;border-color:#dc861f}
 .brand-logo{display:block;width:100%;height:100%}
+.example-buttons{display:flex;gap:6px;flex-wrap:wrap}
+.example-actions .example-button:hover,.example-actions .example-button:focus-visible,.example-actions .example-button.active{background:#269589;border-color:#0f766e;outline:none}
+.example-description{border:1px solid #cfe7dd;border-left:4px solid #197f75;border-radius:10px;background:#f5fbf8;padding:15px 17px;margin-top:5px;max-width:900px;color:#31564b}
+.example-description-heading{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.example-description-heading span{font-size:10px;font-weight:800;letter-spacing:.08em;color:#197f75;text-transform:uppercase}
+.example-description-heading strong{font-size:14px;color:#214b41}
+.example-description p{font-size:12px;line-height:1.65;color:#5e776e;margin:8px 0 12px}
+.example-description-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.example-description-grid div{display:flex;flex-direction:column;gap:4px}
+.example-description-grid b{font-size:11px;color:#397568}
+.example-description-grid span{font-size:11px;line-height:1.6;color:#6b8279}
+@media(max-width:640px){.example-description-grid{grid-template-columns:1fr}}
 .provider-card:not(.selected){background:#fff;border-color:#e1ebe7}.provider-card:not(.selected):hover{background:#f7faf8;border-color:#51aa96}.settings-actions{display:flex;gap:10px;flex-wrap:wrap}.settings-action-button{min-width:170px}.page-description{font-size:12px;color:#7b9088;margin:8px 0 0;max-width:760px;line-height:1.6}
 
 .plan-panel>.wide{display:block;margin-left:auto;margin-right:auto}.guidance-block{border:1px solid #e4eee9;border-radius:10px;padding:14px;background:#fbfdfc;margin-bottom:15px}.guidance-block>h3{font-size:11pt;color:#31564b;margin:0 0 9px}.guidance-field{margin-bottom:12px}.guidance-field textarea{width:100%;border:1px solid #dbe7e1;border-radius:7px;padding:10px 11px;font:inherit;font-size:11pt;color:#315148;background:#fff;resize:vertical;min-height:100px}.guidance-examples{padding:0;background:transparent}.guidance-examples-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:9px}.guidance-examples-head span{font-size:11pt;font-weight:700;color:#31564b}.guidance-examples-head small{font-size:11pt;color:#8a9d95}.guidance-example-buttons{display:flex;flex-wrap:wrap;gap:7px}.guidance-example-buttons .small-button{font-size:11pt}.plan-config-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:15px 0 2px}.plan-config-actions .ghost-button{display:inline-flex;align-items:center}.plan-config-actions small{font-size:11pt}

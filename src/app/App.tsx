@@ -85,6 +85,38 @@ const EXAMPLE_SETS: Record<ExampleKind, ExampleSet> = {
     ]
   }
 }
+const EXAMPLE_DETAILS: Record<ExampleKind, { summary: string; question_focus: string; explanation: string }> = {
+  python: {
+    summary: '以 Python 程式處理資料、清理文字、建立佇列或評估模型的匿名作業範例。',
+    question_focus: '資料流與控制流程、缺漏資料與空集合等邊界條件，以及處理順序對結果的影響。',
+    explanation: '題目會要求學生說明程式如何從輸入得到結果，並推理輸入條件改變時應如何處理。'
+  },
+  medical: {
+    summary: '以臨床案例分析為主的醫學教育作業，涵蓋評估、鑑別、處置與病人安全。',
+    question_focus: '症狀與證據如何支持判斷、危險分層、處置優先順序與安全風險。',
+    explanation: '題目會要求學生連結案例證據與臨床決策，說明不同條件下的處理差異。'
+  },
+  physical_therapy: {
+    summary: '以步態、肌力、活動度與功能訓練為核心的物理治療案例作業。',
+    question_focus: '評估結果與治療目標的關係、訓練安排、症狀反應與安全邊界。',
+    explanation: '題目會要求學生根據功能限制解釋治療選擇，並推理病況或症狀變化後的調整方式。'
+  },
+  medical_technology: {
+    summary: '以醫事檢驗流程、品質控制、分子診斷與生物安全為主的作業範例。',
+    question_focus: '檢體處理流程、品質異常判讀、污染風險與實驗室安全處置。',
+    explanation: '題目會要求學生說明流程中各步驟的目的，以及錯誤或條件變動可能造成的影響。'
+  },
+  general_education: {
+    summary: '以媒體識讀、公共議題、資訊查證與風險溝通為主的通識作業。',
+    question_focus: '證據可信度、資訊查證流程、不同利害關係與公共溝通的取捨。',
+    explanation: '題目會要求學生比較不同證據與溝通方式，說明判斷依據，而不是背誦名詞。'
+  },
+  management: {
+    summary: '以團隊協作、策略決策、組織變革、行銷與營運改善為主的管理學作業。',
+    question_focus: '問題成因、方案取捨、不確定性、溝通與可衡量的改善結果。',
+    explanation: '題目會要求學生分析情境中的因果關係，並比較不同方案在成本、風險與效果上的差異。'
+  }
+}
 const GUIDANCE_EXAMPLES = [
   { label: '請盡量涵蓋每一題', text: '請盡量涵蓋作業的不同重點。' },
   { label: '打亂出題順序', text: '請打亂題目順序，不要依作業原文順序出題。' },
@@ -168,7 +200,20 @@ export default function App() {
   return <div className={`app-shell ${settings.provider === 'mock' ? 'offline-mode' : ''}`}><div className="offline-warning-banner" role="status" aria-live="polite">{settings.provider === 'mock' ? '離線示範：沒有呼叫 AI，只是展示模式' : null}</div><div className="workspace"><aside className="sidebar"><div className="sidebar-brand"><div className="brand-mark"><BrandLogo /></div><div className="brand">AI Homework Quiz</div></div><div className="side-label">工作流程</div>{tabs.map(([id, label, icon]) => <button key={id} className={`nav-item ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}><span className="nav-icon">{icon}</span>{label}{id === 'import' && readyCount > 0 && <b>{readyCount}</b>}{id === 'quiz' && bundles.length > 0 && <b>{bundles.length}</b>}</button>)}<div className="sidebar-bottom"><div className="storage-card"><span>本機資料</span><strong>{sources.length}</strong><small>份來源文件</small></div><button className="text-button" onClick={() => void clearWorkspace()}>清除工作階段</button></div></aside><main className="content">{tab !== 'overview' && <div className="page-head"><div><h1>{tabs.find(t => t[0] === tab)?.[1]}</h1>{tab === 'grading' && <p className="page-description">一次拖入多份作答 JSON 或教師答案 HTML，系統依檔名與識別欄位配對；匯入後不會立即批改。</p>}</div></div>}{notice && tab !== 'quiz' && <div className="notice">{notice}</div>}{tab === 'overview' && <Overview onGo={setTab} onApplyExamples={applyExamples} sources={sources} bundles={bundles} records={records} />}{tab === 'settings' && <Settings settings={settings} setSettings={setSettings} keys={keys} setKeys={setKeys} models={models} showKey={showKey} setShowKey={setShowKey} modelTestStatus={modelTestStatus} connection={connection} testConnection={testConnection} clearApiKeys={clearApiKeys} saveModelSettings={saveModelSettings} />}{tab === 'import' && <ImportPanel busy={busy} records={records} onFiles={handleFiles} setRecords={setRecords} onNext={() => setTab('quiz')} />}{tab === 'quiz' && <QuizScreen plan={plan} updatePlan={updatePlan} records={records} bundles={bundles} busy={busy} onGenerate={generate} onStudentZip={async () => downloadBlob(await makeStudentZip(plan.batch_id, bundles, sourceFileNames), `student_exams_${plan.batch_id}.zip`)} onTeacherZip={async () => downloadBlob(await makeTeacherZip(plan.batch_id, bundles, sourceFileNames, plan), `teacher_keys_${plan.batch_id}.zip`)} examRows={examRows} onRetryExam={retryExam} onDownloadExam={downloadExam} />}{tab === 'grading' && <GradingPanel bundles={bundles} provider={gradingProvider} />}</main></div></div>
 }
 
-function Overview({ onGo, onApplyExamples, sources, bundles, records }: { onGo: (t: Tab) => void; onApplyExamples: (kind: ExampleKind) => void; sources: SourceDocument[]; bundles: QuizBundle[]; records: StudentRecord[] }) { return <div className="overview-clean"><div className="hero-card"><span className="hero-kicker">從來源到理解</span><h2>AI 個人化出題：檢核學生對自身作業的理解程度</h2><p className="hero-subtitle">為每一份作業量身打造測驗題目</p></div><div className="example-actions"><small>範例</small><div><button type="button" className="example-button" onClick={() => onApplyExamples('python')}>Python 程式作業</button><button type="button" className="example-button" onClick={() => onApplyExamples('medical')}>醫學相關作業</button><button type="button" className="example-button" onClick={() => onApplyExamples('physical_therapy')}>物理治療作業</button><button type="button" className="example-button" onClick={() => onApplyExamples('medical_technology')}>醫技系</button><button type="button" className="example-button" onClick={() => onApplyExamples('general_education')}>通識</button><button type="button" className="example-button" onClick={() => onApplyExamples('management')}>管理學科</button></div></div></div> }
+function Overview({ onGo, onApplyExamples, sources, bundles, records }: { onGo: (t: Tab) => void; onApplyExamples: (kind: ExampleKind) => void; sources: SourceDocument[]; bundles: QuizBundle[]; records: StudentRecord[] }) {
+  const [hoveredExample, setHoveredExample] = useState<ExampleKind | null>(null)
+  const exampleButtons: { kind: ExampleKind; label: string }[] = [
+    { kind: 'python', label: 'Python 程式作業' },
+    { kind: 'medical', label: '醫學相關作業' },
+    { kind: 'physical_therapy', label: '物理治療作業' },
+    { kind: 'medical_technology', label: '醫技系' },
+    { kind: 'general_education', label: '通識' },
+    { kind: 'management', label: '管理學科' }
+  ]
+  const hoveredSet = hoveredExample ? EXAMPLE_SETS[hoveredExample] : null
+  const hoveredDetail = hoveredExample ? EXAMPLE_DETAILS[hoveredExample] : null
+  return <div className="overview-clean"><div className="hero-card"><span className="hero-kicker">從來源到理解</span><h2>AI 個人化出題：檢核學生對自身作業的理解程度</h2><p className="hero-subtitle">為每一份作業量身打造測驗題目</p></div><div className="example-actions" onMouseLeave={() => setHoveredExample(null)}><small>範例（滑鼠移入查看作業簡介）</small><div className="example-buttons">{exampleButtons.map(({ kind, label }) => <button type="button" className={`example-button ${hoveredExample === kind ? 'active' : ''}`} key={kind} aria-pressed={hoveredExample === kind} onMouseEnter={() => setHoveredExample(kind)} onFocus={() => setHoveredExample(kind)} onClick={() => onApplyExamples(kind)}>{label}</button>)}</div>{hoveredSet && hoveredDetail && <section className="example-description" aria-live="polite"><div className="example-description-heading"><span>作業簡介</span><strong>{hoveredSet.course_title} · {hoveredSet.assignment_title}</strong></div><p>{hoveredDetail.summary}</p><div className="example-description-grid"><div><b>題目方向</b><span>{hoveredDetail.question_focus}</span></div><div><b>說明</b><span>{hoveredDetail.explanation}</span></div></div></section>}</div></div>
+}
 function Metric({ label, value, hint }: { label: string; value: number; hint: string }) { return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{hint}</small></div> }
 function WorkCard({ n, title, text, onClick }: { n: string; title: string; text: string; onClick: () => void }) { return <button className="work-card" onClick={onClick}><span>{n}</span><h3>{title} <i>↗</i></h3><p>{text}</p></button> }
 
