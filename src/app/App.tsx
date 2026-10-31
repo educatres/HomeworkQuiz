@@ -505,7 +505,7 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
     const effective = result.per_question.map(question => ({ ...question, earned_points: overrideMap[question.question_id]?.score ?? question.earned_points, feedback: overrideMap[question.question_id]?.feedback ?? question.feedback, review_required: overrideMap[question.question_id]?.score === undefined ? question.review_required : false }))
     const correct = effective.filter(question => !question.review_required && question.earned_points >= question.max_points).length
     const incorrect = effective.filter(question => !question.review_required && question.earned_points < question.max_points).length
-    const review = effective.filter(question => question.review_required).length
+    const review = effective.filter(question => question.review_required).length + (pair.promptInjectionAlerts?.length ? 1 : 0)
     const totalScore = effective.reduce((sum, question) => sum + question.earned_points, 0)
     const rate = result.max_score > 0 ? totalScore / result.max_score * 100 : 0
     const understanding = masteryLabel(rate)
