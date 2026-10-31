@@ -24,7 +24,7 @@ describe('OpenAI-compatible provider request options', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       requestUrl = String(input)
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-      return { ok: true, json: async () => ({ output_text: '{}' }), text: async () => '' } as Response
+      return { ok: true, json: async () => ({ output: [{ type: 'message', content: [{ type: 'output_text', text: '{}' }] }] }), text: async () => '' } as Response
     }))
 
     const provider = new OpenAICompatibleProvider({ provider: 'cgu', apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'luna-1' }, 'cgu')
@@ -32,7 +32,15 @@ describe('OpenAI-compatible provider request options', () => {
 
     expect(requestUrl).toBe('https://example.test/v1/responses')
     expect(requestBody?.max_output_tokens).toBe(4096)
+    expect(requestBody?.reasoning).toEqual({ effort: 'none' })
     expect(requestBody).not.toHaveProperty('temperature')
+  })
+
+  it('reports the gateway error body instead of hiding it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 400, text: async () => JSON.stringify({ error: { message: 'model is unavailable' } }) })) as unknown as Response)
+
+    const provider = new OpenAICompatibleProvider({ provider: 'cgu', apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'gpt-oss-test' }, 'cgu')
+    await expect(provider.complete('prompt')).rejects.toThrow('CGU chat/completions HTTP 400: model is unavailable')
   })
 
   it('keeps low temperature for other OpenAI-compatible providers', async () => {
