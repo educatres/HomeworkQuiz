@@ -585,7 +585,7 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
   function downloadClassCsv() {
     const header = ['檔名', '分數', '該學生的總評']
     const rows = visibleResults.map(row => { const pair = pairs.find(item => item.id === row.pair_id); const fileName = pair?.submission?.file_name ?? pair?.key?.file_name ?? row.student_id; return [fileName, row.score === undefined ? '' : `${row.score} / ${row.max}`, summaryByPair[row.pair_id] ?? row.message].map(csvCell).join(',') })
-    downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `class_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8')
+    downloadText(`\uFEFF${[header.map(csvCell).join(','), ...rows].join('\n')}`, `class_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8')
   }
   function downloadReview(kind: 'text' | 'pdf') {
     if (!reviewDraft) return
