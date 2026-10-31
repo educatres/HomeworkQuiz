@@ -32,3 +32,4 @@ body,button,input,select,textarea,small,.brand-mark,.top-status,.subtitle,.side-
 .plan-panel-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}.plan-collapsed-button{width:100%;text-align:center;background:#fff;border-color:#d7e5df;color:#267166}.plan-collapsed-button:hover{background:#f7fbf9;border-color:#76bca9;color:#267166}.student-item:not(.selected){background:#fff}.student-item:not(.selected):hover{background:#eff8f4}
 .grading-progress-status{color:#a47719;font-weight:700;white-space:nowrap}.grading-progress-status.completed{color:#187266}.grading-progress-status.partial{color:#a47719}.grading-progress-status.failed{color:#b7473e}
 .review-download-actions{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px}
+.content{max-width:90vw}
