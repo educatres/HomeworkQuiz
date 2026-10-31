@@ -85,38 +85,49 @@ const EXAMPLE_SETS: Record<ExampleKind, ExampleSet> = {
     ]
   }
 }
-const EXAMPLE_DETAILS: Record<ExampleKind, { summary: string; question_focus: string; explanation: string }> = {
+const EXAMPLE_DETAILS: Record<ExampleKind, { summary: string; question_focus: string; explanation: string; ai_use_guidance: string }> = {
   python: {
     summary: '以 Python 程式處理資料、清理文字、建立佇列或評估模型的匿名作業範例。',
     question_focus: '資料流與控制流程、缺漏資料與空集合等邊界條件，以及處理順序對結果的影響。',
-    explanation: '題目會要求學生說明程式如何從輸入得到結果，並推理輸入條件改變時應如何處理。'
+    explanation: '題目會要求學生說明程式如何從輸入得到結果，並推理輸入條件改變時應如何處理。',
+    ai_use_guidance: '這五份 Python 作業可用來觀察學生是否真的掌握資料輸入、處理流程、函式責任與例外行為。測驗可請學生逐步說明程式如何得到結果，再改變缺少欄位、空資料、未歸還紀錄、空佇列或長度不一致等條件，要求他們預測結果並提出測試方法。若學生只會重述一段流暢但與自己程式無關的說明，遇到變動情境便無法回答，可能代表理解尚未建立；若能檢查 AI 產生的建議、指出限制並修改程式，呈現人與 AI 的協同；若能比較替代資料結構、說明取捨並設計新的邊界測試，則顯示已有吸收與思考。測驗結果不能判定學生是否使用 AI，也不能證明完全未使用 AI。'
   },
   medical: {
     summary: '以臨床案例分析為主的醫學教育作業，涵蓋評估、鑑別、處置與病人安全。',
     question_focus: '症狀與證據如何支持判斷、危險分層、處置優先順序與安全風險。',
-    explanation: '題目會要求學生連結案例證據與臨床決策，說明不同條件下的處理差異。'
+    explanation: '題目會要求學生連結案例證據與臨床決策，說明不同條件下的處理差異。',
+    ai_use_guidance: '這五份臨床案例作業可用來觀察學生是否能把病史、症狀、檢查結果與處置優先順序連成合理推論。測驗可改變一項關鍵條件，例如生命徵象、風險因子、檢驗結果或病人反應，請學生重新排序評估與處置，並說明不能忽略的安全問題。若回答只列出通用醫療術語，卻無法指出本案例的證據與取捨，可能是依賴現成答案；若能核對 AI 提供的建議、補充案例未寫明的風險並說明仍需哪些資料，呈現人與 AI 的協同；若能比較不同處置方案、說明適用條件與限制，則顯示有吸收思考。測驗只能觀察臨床推理表現，不能據此判定是否使用 AI 或未使用 AI。'
   },
   physical_therapy: {
     summary: '以步態、肌力、活動度與功能訓練為核心的物理治療案例作業。',
     question_focus: '評估結果與治療目標的關係、訓練安排、症狀反應與安全邊界。',
-    explanation: '題目會要求學生根據功能限制解釋治療選擇，並推理病況或症狀變化後的調整方式。'
+    explanation: '題目會要求學生根據功能限制解釋治療選擇，並推理病況或症狀變化後的調整方式。',
+    ai_use_guidance: '這五份物理治療作業可用來觀察學生是否能從功能限制、肌力、活動度、平衡與疼痛反應推導治療目標。測驗可請學生說明為何安排某項訓練，再改變病人的疼痛、支撐需求、活動範圍或耐受程度，要求他們調整強度、順序與安全措施。若學生只能背出運動名稱，無法解釋評估結果與處方的關聯，可能是過度依賴整理好的答案；若能參考 AI 建議後依個案資料修正處方、指出禁忌與需要追蹤的指標，呈現人與 AI 的協同；若能主動提出替代訓練並說明不同族群的取捨，則顯示有吸收思考。這些證據反映理解程度，不能反推學生是否使用或未使用 AI。'
   },
   medical_technology: {
     summary: '以醫事檢驗流程、品質控制、分子診斷與生物安全為主的作業範例。',
     question_focus: '檢體處理流程、品質異常判讀、污染風險與實驗室安全處置。',
-    explanation: '題目會要求學生說明流程中各步驟的目的，以及錯誤或條件變動可能造成的影響。'
+    explanation: '題目會要求學生說明流程中各步驟的目的，以及錯誤或條件變動可能造成的影響。',
+    ai_use_guidance: '這五份醫技作業可用來觀察學生是否理解檢體從辨識、運送、前處理到分析與品質判讀的完整流程。測驗可改變運送條件、檢體品質、控制圖形態、污染位置或意外事件，要求學生指出最先要確認的環節、可能影響與後續處置。若學生能列出流程名詞卻無法解釋為何要拒收檢體或如何隔離污染，可能只是套用生成內容；若能使用 AI 協助整理流程，再依實驗室情境核對標準、修正不合理步驟，呈現人與 AI 的協同；若能比較不同品質控制策略、預測錯誤傳播並提出可驗證的改善方案，則顯示有吸收思考。測驗不具備 AI 偵測功能，也不能證明沒有使用 AI。'
   },
   general_education: {
     summary: '以媒體識讀、公共議題、資訊查證與風險溝通為主的通識作業。',
     question_focus: '證據可信度、資訊查證流程、不同利害關係與公共溝通的取捨。',
-    explanation: '題目會要求學生比較不同證據與溝通方式，說明判斷依據，而不是背誦名詞。'
+    explanation: '題目會要求學生比較不同證據與溝通方式，說明判斷依據，而不是背誦名詞。',
+    ai_use_guidance: '這五份通識作業可用來觀察學生是否能區分事實、解釋、立場與證據，並把查證步驟用在新的公共議題。測驗可提供一則不同來源的訊息，要求學生判斷可信度、說明還需要查什麼，再改變受眾、風險程度或傳播情境，請學生重新設計溝通方式。若回答充滿完整術語卻無法指出證據來源、查證順序與利益衝突，可能只是依賴 AI 組織文字；若能用 AI 協助比較資料，仍自行驗證來源、修正偏誤並說明選擇理由，呈現人與 AI 的協同；若能提出反例、辨識不確定性並權衡多種價值，則顯示有吸收思考。測驗只能呈現推理與判斷證據，不能判定 AI 使用狀態。'
   },
   management: {
     summary: '以團隊協作、策略決策、組織變革、行銷與營運改善為主的管理學作業。',
     question_focus: '問題成因、方案取捨、不確定性、溝通與可衡量的改善結果。',
-    explanation: '題目會要求學生分析情境中的因果關係，並比較不同方案在成本、風險與效果上的差異。'
+    explanation: '題目會要求學生分析情境中的因果關係，並比較不同方案在成本、風險與效果上的差異。',
+    ai_use_guidance: '這五份管理學作業可用來觀察學生是否能從情境資料找出問題成因，連結角色、溝通、誘因、成本與預期結果。測驗可改變資源、時間、利害關係人或市場不確定性，請學生重新比較方案、說明取捨並提出衡量成效的方法。若學生只能套用管理術語或產生漂亮的策略口號，卻無法說明為何適合此情境，可能是過度依賴現成文字；若能用 AI 協助發想方案，再以案例證據篩選、修正假設並補上風險，呈現人與 AI 的協同；若能提出反事實推論、替代方案與可驗證指標，則顯示有吸收思考。這些表現不能用來判定學生是否使用 AI，也不能證明未使用 AI。'
   }
 }
+const AI_USE_LEVELS = [
+  { label: '過度依賴', text: '答案流暢或術語完整，但無法回到作業證據、說明推理步驟，遇到條件改變便無法解釋。' },
+  { label: '人＋AI 協同', text: '能說明自己如何檢查、修改或取捨 AI 建議，並依作業情境補充限制、測試或證據。' },
+  { label: '有吸收思考', text: '能將觀念遷移到新情境，提出反例、替代方案與可驗證的推理，並清楚說明設計取捨。' }
+] as const
 const GUIDANCE_EXAMPLES = [
   { label: '請盡量涵蓋每一題', text: '請盡量涵蓋作業的不同重點。' },
   { label: '打亂出題順序', text: '請打亂題目順序，不要依作業原文順序出題。' },
@@ -212,7 +223,7 @@ function Overview({ onGo, onApplyExamples, sources, bundles, records }: { onGo: 
   ]
   const selectedSet = EXAMPLE_SETS[selectedExample]
   const selectedDetail = EXAMPLE_DETAILS[selectedExample]
-  return <div className="overview-clean"><div className="hero-card"><h2>AI 個人化出題：檢核學生對自身作業的理解程度</h2><p className="hero-subtitle">為每一份作業量身打造測驗題目</p></div><section className="overview-intro"><p>在 AI 時代，學生透過生成式 AI 取得作業答案變得前所未有地容易，但完成作業是否代表真正理解？學生是否已經吸收其中的知識與觀念，還是只是將 AI 產生的內容整理後繳交，成為 AI 答案的「搬運工」？這是 AI 融入教學後，教師面臨的重要挑戰。Homework Quiz 希望協助教師將評量重點從「學生交出了什麼」，進一步延伸到「學生是否真正理解自己交出的內容」。然而，面對大量學生作業，教師往往需要花費許多時間閱讀內容、設計問題、整理試卷，並逐一檢查學生的理解程度。為此，我們開發了 Homework Quiz，一套在瀏覽器中運作的教師測驗工作台，能根據每位學生提交的作業，自動產生個別化的「作業理解測驗」，協助教師檢核學生對觀念、邏輯與設計方法的掌握程度，並集中處理答卷、AI 輔助批改與全班成績分析，讓教師更有效率地掌握學生的實際學習成果。</p><p>Homework Quiz 可以協助教師：</p><ul><li>批次匯入 PDF、文字、Markdown、Notebook 與多種程式碼檔案</li><li>依每位學生的作業內容產生個別化單選、複選與簡答題</li><li>設定題數、題型比例、理解層次、難度與配分</li><li>以作業中的觀念、邏輯、資料／控制流程及限制為出題依據</li><li>匯入學生作答與教師答案，檢查識別欄位後進行批次 AI 批改</li><li>檢視逐題評語、總分與全班成績報告，並進行教師覆核</li></ul><p>使用方式：</p><ol><li>開啟 Homework Quiz 網站。</li><li>在「AI 設定」選擇 OpenAI、Google Gemini、xAI/Grok 或 CGU，輸入教師自己的 API Key 並執行連線測試。</li><li>建立批次作業，填寫課程、作業名稱、批次 ID、題數、題型與配分。</li><li>將學生作業拖曳至「匯入學生作業」，確認 Student ID 與檔案狀態。</li><li>開始出題，逐位學生檢查題目後下載學生試卷與教師答案包。</li><li>收回學生作答檔後，在「批改與分析」匯入作答與參考答案，確認配對，再執行批改與覆核。</li></ol></section><div className="example-actions"><small>範例（點選分頁查看作業簡介）</small><div className="example-tabs" role="tablist" aria-label="作業範例">{exampleButtons.map(({ kind, label }) => <button type="button" role="tab" className={`example-tab ${selectedExample === kind ? 'active' : ''}`} key={kind} id={`example-tab-${kind}`} aria-controls="example-panel" aria-selected={selectedExample === kind} onClick={() => setSelectedExample(kind)}>{label}</button>)}</div><section id="example-panel" role="tabpanel" aria-labelledby={`example-tab-${selectedExample}`} className="example-description"><div className="example-description-heading"><span>作業簡介</span><strong>{selectedSet.course_title} · {selectedSet.assignment_title}</strong></div><p>{selectedDetail.summary}</p><div className="example-description-grid"><div><b>題目方向</b><span>{selectedDetail.question_focus}</span></div><div><b>說明</b><span>{selectedDetail.explanation}</span></div></div><button type="button" className="primary-button example-apply-button" onClick={() => onApplyExamples(selectedExample)}>套用範例（{selectedSet.students.length} 份作業）</button></section></div></div>
+  return <div className="overview-clean"><div className="hero-card"><h2>AI 個人化出題：檢核學生對自身作業的理解程度</h2><p className="hero-subtitle">為每一份作業量身打造測驗題目</p></div><section className="overview-intro"><p>在 AI 時代，學生透過生成式 AI 取得作業答案變得前所未有地容易，但完成作業是否代表真正理解？學生是否已經吸收其中的知識與觀念，還是只是將 AI 產生的內容整理後繳交，成為 AI 答案的「搬運工」？這是 AI 融入教學後，教師面臨的重要挑戰。Homework Quiz 希望協助教師將評量重點從「學生交出了什麼」，進一步延伸到「學生是否真正理解自己交出的內容」。然而，面對大量學生作業，教師往往需要花費許多時間閱讀內容、設計問題、整理試卷，並逐一檢查學生的理解程度。為此，我們開發了 Homework Quiz，一套在瀏覽器中運作的教師測驗工作台，能根據每位學生提交的作業，自動產生個別化的「作業理解測驗」，協助教師檢核學生對觀念、邏輯與設計方法的掌握程度，並集中處理答卷、AI 輔助批改與全班成績分析，讓教師更有效率地掌握學生的實際學習成果。</p><p>Homework Quiz 可以協助教師：</p><ul><li>批次匯入 PDF、文字、Markdown、Notebook 與多種程式碼檔案</li><li>依每位學生的作業內容產生個別化單選、複選與簡答題</li><li>設定題數、題型比例、理解層次、難度與配分</li><li>以作業中的觀念、邏輯、資料／控制流程及限制為出題依據</li><li>匯入學生作答與教師答案，檢查識別欄位後進行批次 AI 批改</li><li>檢視逐題評語、總分與全班成績報告，並進行教師覆核</li></ul><p>使用方式：</p><ol><li>開啟 Homework Quiz 網站。</li><li>在「AI 設定」選擇 OpenAI、Google Gemini、xAI/Grok 或 CGU，輸入教師自己的 API Key 並執行連線測試。</li><li>建立批次作業，填寫課程、作業名稱、批次 ID、題數、題型與配分。</li><li>將學生作業拖曳至「匯入學生作業」，確認 Student ID 與檔案狀態。</li><li>開始出題，逐位學生檢查題目後下載學生試卷與教師答案包。</li><li>收回學生作答檔後，在「批改與分析」匯入作答與參考答案，確認配對，再執行批改與覆核。</li></ol></section><div className="example-actions"><small>範例（點選分頁查看作業簡介）</small><div className="example-tabs" role="tablist" aria-label="作業範例">{exampleButtons.map(({ kind, label }) => <button type="button" role="tab" className={`example-tab ${selectedExample === kind ? 'active' : ''}`} key={kind} id={`example-tab-${kind}`} aria-controls="example-panel" aria-selected={selectedExample === kind} onClick={() => setSelectedExample(kind)}>{label}</button>)}</div><section id="example-panel" role="tabpanel" aria-labelledby={`example-tab-${selectedExample}`} className="example-description"><div className="example-description-heading"><span>作業簡介</span><strong>{selectedSet.course_title} · {selectedSet.assignment_title}</strong></div><p>{selectedDetail.summary}</p><div className="example-description-grid"><div><b>題目方向</b><span>{selectedDetail.question_focus}</span></div><div><b>說明</b><span>{selectedDetail.explanation}</span></div></div><div className="example-ai-guidance"><h3>本範例五份作業的 AI 使用與測驗觀察</h3><p>{selectedDetail.ai_use_guidance}</p><div className="example-ai-levels">{AI_USE_LEVELS.map(level => <div className="example-ai-level" key={level.label}><b>{level.label}</b><span>{level.text}</span></div>)}</div><p className="example-ai-limit"><b>未使用 AI：</b>僅靠這份測驗無法判定是否使用 AI，也不能把測驗表現當成作者身分或 AI 代寫的證據；請搭配作業歷程、課堂互動與教師覆核。</p></div><button type="button" className="primary-button example-apply-button" onClick={() => onApplyExamples(selectedExample)}>套用範例（{selectedSet.students.length} 份作業）</button></section></div></div>
 }
 function Metric({ label, value, hint }: { label: string; value: number; hint: string }) { return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{hint}</small></div> }
 function WorkCard({ n, title, text, onClick }: { n: string; title: string; text: string; onClick: () => void }) { return <button className="work-card" onClick={onClick}><span>{n}</span><h3>{title} <i>↗</i></h3><p>{text}</p></button> }
