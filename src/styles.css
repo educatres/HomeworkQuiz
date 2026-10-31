@@ -36,6 +36,15 @@ body,button,input,select,textarea,small,.brand-mark,.top-status,.subtitle,.side-
 @media(max-width:640px){.example-description-grid{grid-template-columns:1fr}}
 .content{margin:0 auto}
 .example-description,.example-description p,.example-description-heading span,.example-description-heading strong,.example-description-grid b,.example-description-grid span{font-size:12pt}
+.overview-clean .hero-card{height:128px;min-height:128px;padding:18px 40px;display:flex;flex-direction:column;justify-content:center}
+.overview-clean .hero-card h2{margin:0 0 8px}
+.overview-clean .hero-card p{margin:0}
+.overview-intro{background:#fff;border:1px solid #e0ebe6;border-radius:14px;padding:22px 26px;margin:18px 0 22px;color:#45665c;box-shadow:0 8px 22px rgba(24,67,56,.1)}
+.overview-intro p,.overview-intro li{font-size:12pt;line-height:1.8}
+.overview-intro p{margin:0 0 12px}
+.overview-intro ul,.overview-intro ol{margin:0 0 14px;padding-left:1.6em}
+.overview-intro li{padding-left:4px;margin:3px 0}
+@media(max-width:640px){.overview-clean .hero-card{height:auto;min-height:128px;padding:20px 25px}.overview-intro{padding:18px 19px}}
 .example-tabs{display:flex;gap:0;overflow-x:auto;border-bottom:1px solid #cfe7dd}
 .example-tab{border:1px solid transparent;border-bottom:0;background:#eef8f4;color:#397568;padding:10px 14px;min-height:42px;font:inherit;font-size:12pt;cursor:pointer;white-space:nowrap}
 .example-tab:hover,.example-tab:focus-visible{background:#e0f2eb;color:#176b60;outline:none}
