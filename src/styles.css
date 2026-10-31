@@ -28,3 +28,4 @@ body,button,input,select,textarea,small,.brand-mark,.top-status,.subtitle,.side-
 
 .plan-config-panel{border:1px solid #e4eee9;border-radius:10px;padding:14px;background:#f7faf8;margin-top:15px}.plan-config-heading h3{font-size:11pt;color:#31564b;margin:0 0 5px}.plan-config-heading p{font-size:11pt;color:#8a9d95;line-height:1.55;margin:0;max-width:760px}.plan-config-panel .plan-config-actions{margin-bottom:0}
 .generation-error{color:#ad4a3b;max-width:280px;font-size:11pt}.generation-error summary{cursor:pointer;font-weight:700}.generation-error small{display:block;color:#8b3d35;line-height:1.45;margin-top:5px;white-space:normal;overflow-wrap:anywhere}
+.download-zip-button{min-height:38px;height:38px;padding:7px 12px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:11pt}.download-icon{width:17px;height:17px;flex:none}
