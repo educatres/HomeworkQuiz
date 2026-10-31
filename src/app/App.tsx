@@ -315,8 +315,11 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
   const [gradingProgress, setGradingProgress] = useState<Record<string, GradingProgress>>({})
   const [reviewDraft, setReviewDraft] = useState<ReviewDraft | null>(null)
   const [reviewSummary, setReviewSummary] = useState('')
+  const [summaryBusy, setSummaryBusy] = useState(false)
   const [reportSort, setReportSort] = useState<{ key: ReportSortKey; direction: 'asc' | 'desc' }>({ key: 'student', direction: 'asc' })
   const reviewRun = useRef(0)
+  const reviewInitialRows = useRef<ReviewRow[] | null>(null)
+  const reviewInitialSummary = useRef('')
   useEffect(() => {
     if (!reviewDraft) return
     const previousOverflow = document.body.style.overflow
@@ -418,7 +421,9 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
     if (gradingProgress[pair.id]?.status !== 'completed') return
     const draft = buildReviewDraft(pair); if (!draft) return
     reviewRun.current += 1
+    reviewInitialRows.current = draft.rows.map(row => ({ ...row }))
     const existingSummary = summaryByPair[pair.id] ?? results.find(row => row.pair_id === pair.id)?.message ?? ''
+    reviewInitialSummary.current = existingSummary
     setReviewSummary(existingSummary)
     setReviewDraft(draft)
   }
@@ -428,6 +433,47 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
     setReviewSummary(value)
     setSummaryByPair(current => ({ ...current, [reviewDraft.pair_id]: value }))
     setResults(current => current.map(row => row.pair_id === reviewDraft.pair_id ? { ...row, message: value } : row))
+  }
+  function reviewOverrides(rows: ReviewRow[]) {
+    const overrides: Record<string, TeacherOverride> = {}
+    rows.forEach(row => { const raw = row.teacher_score.trim(); const score = raw === '' ? undefined : Math.min(row.max_points, Math.max(0, Number(raw))); overrides[row.question_id] = { score: score !== undefined && Number.isFinite(score) ? score : undefined, feedback: row.feedback } })
+    return overrides
+  }
+  async function regenerateSummary() {
+    if (!reviewDraft || summaryBusy) return
+    const pair = pairs.find(item => item.id === reviewDraft.pair_id)
+    if (!pair) return
+    const overrides = reviewOverrides(reviewDraft.rows)
+    const baseReport = makeReport(pair, overrides, '')
+    setSummaryBusy(true)
+    let summary = ''
+    try {
+      if (provider) {
+        const response = await provider.complete(summaryPrompt(reviewDraft.course_title, reviewDraft.assignment_title, reviewDraft.rows, baseReport.score ?? 0, baseReport.max ?? 0), '你是教師評量助教，只能根據題目、學生回答、參考答案與評分證據產生整體理解摘要；不要逐題列出。')
+        const value = parseAiObject(response.text).summary
+        if (typeof value !== 'string' || !value.trim()) throw new Error('AI 沒有回傳有效總評。')
+        summary = value.trim()
+      } else {
+        const representative = reviewDraft.rows.find(row => row.type === 'short_answer') ?? reviewDraft.rows[0]
+        summary = `整體得分 ${baseReport.score ?? 0}/${baseReport.max ?? 0}；${representative ? `${representative.question_id} 顯示${baseReport.message}` : baseReport.message}`
+      }
+      setReviewSummary(summary)
+      setSummaryByPair(current => ({ ...current, [reviewDraft.pair_id]: summary }))
+      setResults(current => current.map(row => row.pair_id === reviewDraft.pair_id ? { ...row, message: summary } : row))
+    } catch (error) {
+      setMessage(`總評生成失敗：${classifyProviderError(error)}`)
+    } finally {
+      setSummaryBusy(false)
+    }
+  }
+  function cancelReview() {
+    if (!reviewDraft) return
+    const rowsChanged = reviewInitialRows.current ? JSON.stringify(reviewDraft.rows) !== JSON.stringify(reviewInitialRows.current) : false
+    const summaryChanged = reviewSummary !== reviewInitialSummary.current
+    if ((rowsChanged || summaryChanged) && !window.confirm('已修改覆核內容，取消後將捨棄本次修改，確定要取消嗎？')) return
+    setSummaryByPair(current => ({ ...current, [reviewDraft.pair_id]: reviewInitialSummary.current }))
+    setResults(current => current.map(row => row.pair_id === reviewDraft.pair_id ? { ...row, message: reviewInitialSummary.current } : row))
+    reviewInitialRows.current = null; reviewInitialSummary.current = ''; setReviewSummary(''); setReviewDraft(null)
   }
   function confirmReview() {
     if (!reviewDraft) return
@@ -439,7 +485,7 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
     setSummaryByPair(current => ({ ...current, [reviewDraft.pair_id]: reviewSummary }))
     const report = makeReport(pair, nextOverrides, reviewSummary)
     setResults(current => [...current.filter(row => row.pair_id !== pair.id), report])
-    setReviewSummary(''); setReviewDraft(null); setMessage(pair.student_id + ' 的學生作答與理解摘要已更新。')
+    reviewInitialRows.current = null; reviewInitialSummary.current = ''; setReviewSummary(''); setReviewDraft(null); setMessage(pair.student_id + ' 的學生作答與理解摘要已更新。')
   }
   async function gradeMatchedPair(pair: GradingPair) {
     const draft = buildReviewDraft(pair)
@@ -514,7 +560,19 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
       setBusy(false)
     }
   }
-  function downloadReport() { const header = ['學生', '分數', '滿分', '學生作答與理解摘要']; const rows = results.map(row => [row.student_id, row.score ?? '', row.max ?? '', summaryByPair[row.pair_id] ?? row.message].map(csvCell).join(',')); downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `grading_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8') }
+  function classReportText() {
+    const lines = [`# 全班分數報告`, '', `產生日期：${new Date().toLocaleDateString('zh-TW')}`, '']
+    visibleResults.forEach((row, index) => {
+      lines.push(`## ${index + 1}. ${row.student_id}`, '', `- 分數：${row.score === undefined ? '—' : `${row.score} / ${row.max}`}`, `- 學生作答與理解摘要：${summaryByPair[row.pair_id] ?? row.message}`, '')
+    })
+    return lines.join('\n')
+  }
+  function downloadClassReport(kind: 'text' | 'pdf') {
+    const content = classReportText()
+    const date = new Date().toISOString().slice(0, 10)
+    if (kind === 'text') downloadText(content, `class_report_${date}.txt`, 'text/plain;charset=utf-8')
+    else downloadBlob(makeReviewPdf(content), `class_report_${date}.pdf`)
+  }
   function downloadReview(kind: 'text' | 'pdf') {
     if (!reviewDraft) return
     const summary = summaryByPair[reviewDraft.pair_id] ?? results.find(row => row.pair_id === reviewDraft.pair_id)?.message ?? ''
@@ -544,7 +602,7 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
   return <>
     <section className="panel grading-import-panel"><div className="panel-title"><div><h2>匯入檔案 <span className="count">{files.length}</span></h2><p>檔名相同或可由學生 ID／quiz ID 對應的檔案會自動配對。</p></div><button className="ghost-button" disabled={!files.length || busy} onClick={() => { setFiles([]); setResults([]); setAssignments({}); setReleasedFiles([]); setTeacherOverrides({}); setSummaryByPair({}); setAiFeedbackByPair({}); setGradingProgress({}); setReviewDraft(null); setZones({ unmatched: [], student: [], unknown: [] }); setMessage('') }}>清空清單</button></div><div className={`dropzone grading-dropzone ${drag ? 'drag' : ''}`} onDragOver={event => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={event => { event.preventDefault(); setDrag(false); void importFiles(event.dataTransfer.files) }}><div className="upload-icon">↑</div><h2>拖曳作答與參考答案到這裡</h2><p>支援學生交卷 JSON、教師答案 JSON 或 _Teacher.htm；可一次選取或拖曳多個檔案。</p><label className="primary-button">選擇檔案<input type="file" accept=".json,.htm,.html,application/json,text/html" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files) }} /></label></div>{files.length ? <div className="file-table grading-import-table"><div className="file-row header"><span>檔案</span><span>類型</span><span>學生</span><span>狀態</span></div>{files.map((file, index) => { const paired = pairedFileNames.has(file.file_name); return <div className="file-row" key={`${file.file_name}-${index}`} draggable onDragStart={event => beginDrag(event, file.file_name)}><span className="file-name">{file.file_name}</span><span>{fileKindLabel(file.kind)}</span><span>{file.student_id || '—'}</span><span className={paired ? 'file-paired' : 'file-unpaired'}>{paired ? '已配對' : '未配對'}</span></div> })}</div> : <div className="empty-state">尚未匯入檔案。</div>}</section>
     {files.length > 0 && <section className="panel"><div className="panel-title"><div><h2>配對檢查</h2><p>{message || '可將檔案拖到學生列或下方分類區；確認後再按批改。'}</p></div><button className="primary-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>{busy ? '批改中…' : '批改全班試卷'}</button></div><div className="pair-drop-zones">{zoneDefinitions.map(zone => <div className="pair-drop-zone" key={zone.id} onDragOver={event => event.preventDefault()} onDrop={event => moveToZone(event, zone.id)}><h3>{zone.label}</h3><small>{zone.hint}</small><div className="pair-drop-items">{zoneItems[zone.id].map(fileName => <span key={fileName} draggable onDragStart={event => beginDrag(event, fileName)}>{fileName}</span>)}</div></div>)}</div>{pairs.length ? <div className="grading-pair-table"><div className="grading-pair-row header"><span>學生</span><span>作答檔</span><span>參考答案</span><span>狀態</span><span>批改</span></div>{pairs.map(pair => { const report = results.find(row => row.pair_id === pair.id); return <div className="grading-pair-row" key={pair.id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const fileName = draggedFile(event); if (fileName) assignFile(fileName, pair) }}><span>{pair.student_id}</span><span className="draggable-file" draggable={!!pair.submission} onDragStart={event => pair.submission && beginDrag(event, pair.submission.file_name)}>{pair.submission?.file_name || '—'}</span><span className="draggable-file" draggable={!!pair.key} onDragStart={event => pair.key && beginDrag(event, pair.key.file_name)}>{pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—')}</span>{renderPairStatus(pair)}<button className="small-button" disabled={busy || pair.status !== 'matched'} onClick={() => void gradeOne(pair)}>{report ? '重批' : '批改'}</button></div> })}</div> : <div className="empty-state">匯入檔案後會在這裡顯示配對結果。</div>}</section>}
-    {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><div className="report-actions"><button className="ghost-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>重新批改</button><button className="ghost-button" onClick={downloadReport}>下載分數報告 CSV</button></div></div><div className="grading-report-table"><div className="grading-report-row header"><span>覆核</span><span><button className="report-sort-button" onClick={() => toggleReportSort('student')}>學生 {reportSort.key === 'student' ? (reportSort.direction === 'asc' ? '↑' : '↓') : '↕'}</button></span><span><button className="report-sort-button" onClick={() => toggleReportSort('score')}>分數 {reportSort.key === 'score' ? (reportSort.direction === 'asc' ? '↑' : '↓') : '↕'}</button></span><span>學生作答與理解摘要</span></div>{visibleResults.map((row, index) => { const pair = pairs.find(item => item.id === row.pair_id); const percentage = row.score === undefined || !row.max ? undefined : row.score / row.max * 100; const scoreTone = percentage === undefined ? 'score-none' : percentage <= 40 ? 'score-low' : percentage <= 60 ? 'score-mid' : 'score-high'; return <div className="grading-report-row" key={`${row.pair_id}-${index}`}><span><button className="small-button review-button" disabled={!pair || pair.status !== 'matched' || gradingProgress[pair.id]?.status !== 'completed'} onClick={() => pair && openReview(pair)}>覆核</button></span><span>{row.student_id}</span><span className="score-cell"><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong>{percentage !== undefined && <i className={`score-indicator ${scoreTone}`} aria-label={`答對 ${percentage.toFixed(0)}%`} />}</span><span title={summaryByPair[row.pair_id] ?? row.message}>{summaryByPair[row.pair_id] ?? row.message}</span></div> })}</div></section>}
-    {reviewDraft && <section className="panel grading-review-panel"><div className="panel-title"><div><h2>覆核：{reviewDraft.student_id}</h2><p>教師打分會覆蓋 AI 分數；評語可直接編輯。選擇題的批改建議欄留白。</p></div><div className="review-actions"><button className="primary-button" onClick={() => confirmReview()}>確定</button></div></div><div className="review-summary-editor"><div className="review-summary-heading"><label htmlFor="review-summary">總評</label><span className="summary-status-ready">可手動編輯</span></div><textarea id="review-summary" rows={4} value={reviewSummary} onChange={event => updateReviewSummary(event.target.value)} aria-label="學生作答與理解總評" /></div><div className="grading-review-table"><div className="grading-review-row header"><span>每一題題目</span><span>學生回答</span><span>參考答案</span><span>批改建議</span><span>教師打分（註記會覆蓋 AI 評分）</span><span>重新寫評語</span></div>{reviewDraft.rows.map(row => <div className="grading-review-row" key={row.question_id}><div><b>{row.question_id}</b><p>{row.question}</p></div><div>{row.student_answer}</div><div>{row.reference_answer}</div><div>{row.suggestion}</div><div><small>AI：{row.ai_score} / {row.max_points}</small><input type="number" min="0" max={row.max_points} step="0.01" value={row.teacher_score} placeholder="留白沿用 AI" onChange={event => updateReviewRow(row.question_id, 'teacher_score', event.target.value)} /></div><textarea rows={4} value={row.feedback} onChange={event => updateReviewRow(row.question_id, 'feedback', event.target.value)} aria-label={`${row.question_id} 評語`} /></div>)}</div><div className="review-download-actions"><button className="ghost-button" onClick={() => downloadReview('text')}>下載 TXT</button><button className="ghost-button" onClick={() => downloadReview('pdf')}>下載 PDF</button></div></section>}
+    {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><div className="report-actions"><button className="ghost-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>重新批改</button><button className="ghost-button" onClick={() => downloadClassReport('text')}>下載全班 TXT</button><button className="ghost-button" onClick={() => downloadClassReport('pdf')}>下載全班 PDF</button></div></div><div className="grading-report-table"><div className="grading-report-row header"><span>覆核</span><span><button className="report-sort-button" onClick={() => toggleReportSort('student')}>學生 {reportSort.key === 'student' ? (reportSort.direction === 'asc' ? '↑' : '↓') : '↕'}</button></span><span><button className="report-sort-button" onClick={() => toggleReportSort('score')}>分數 {reportSort.key === 'score' ? (reportSort.direction === 'asc' ? '↑' : '↓') : '↕'}</button></span><span>學生作答與理解摘要</span></div>{visibleResults.map((row, index) => { const pair = pairs.find(item => item.id === row.pair_id); const percentage = row.score === undefined || !row.max ? undefined : row.score / row.max * 100; const scoreTone = percentage === undefined ? 'score-none' : percentage <= 40 ? 'score-low' : percentage <= 60 ? 'score-mid' : 'score-high'; return <div className="grading-report-row" key={`${row.pair_id}-${index}`}><span><button className="small-button review-button" disabled={!pair || pair.status !== 'matched' || gradingProgress[pair.id]?.status !== 'completed'} onClick={() => pair && openReview(pair)}>覆核</button></span><span>{row.student_id}</span><span className="score-cell"><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong>{percentage !== undefined && <i className={`score-indicator ${scoreTone}`} aria-label={`答對 ${percentage.toFixed(0)}%`} />}</span><span title={summaryByPair[row.pair_id] ?? row.message}>{summaryByPair[row.pair_id] ?? row.message}</span></div> })}</div></section>}
+    {reviewDraft && <section className="panel grading-review-panel"><div className="panel-title"><div><h2>覆核：{reviewDraft.student_id}</h2><p>教師打分會覆蓋 AI 分數；評語可直接編輯。選擇題的批改建議欄留白。</p></div><div className="review-actions"><button className="ghost-button" disabled={summaryBusy} onClick={() => void regenerateSummary()}>{summaryBusy ? '產成總評中...' : '由AI重新產生總評'}</button><button className="primary-button" disabled={summaryBusy} onClick={() => confirmReview()}>確定</button><button className="ghost-button" disabled={summaryBusy} onClick={cancelReview}>取消</button></div></div><div className="review-summary-editor"><div className="review-summary-heading"><label htmlFor="review-summary">總評</label><span className={summaryBusy ? 'summary-status-busy' : 'summary-status-ready'}>{summaryBusy ? '產成總評中...' : '可手動編輯'}</span></div><textarea id="review-summary" rows={4} disabled={summaryBusy} value={reviewSummary} onChange={event => updateReviewSummary(event.target.value)} aria-label="學生作答與理解總評" /></div><div className="grading-review-table"><div className="grading-review-row header"><span>每一題題目</span><span>學生回答</span><span>參考答案</span><span>批改建議</span><span>教師打分（註記會覆蓋 AI 評分）</span><span>重新寫評語</span></div>{reviewDraft.rows.map(row => <div className="grading-review-row" key={row.question_id}><div><b>{row.question_id}</b><p>{row.question}</p></div><div>{row.student_answer}</div><div>{row.reference_answer}</div><div>{row.suggestion}</div><div><small>AI：{row.ai_score} / {row.max_points}</small><input type="number" min="0" max={row.max_points} step="0.01" disabled={summaryBusy} value={row.teacher_score} placeholder="留白沿用 AI" onChange={event => updateReviewRow(row.question_id, 'teacher_score', event.target.value)} /></div><textarea rows={4} disabled={summaryBusy} value={row.feedback} onChange={event => updateReviewRow(row.question_id, 'feedback', event.target.value)} aria-label={`${row.question_id} 評語`} /></div>)}</div><div className="review-download-actions"><button className="ghost-button" disabled={summaryBusy} onClick={() => downloadReview('text')}>下載 TXT</button><button className="ghost-button" disabled={summaryBusy} onClick={() => downloadReview('pdf')}>下載 PDF</button></div>{summaryBusy && <div className="summary-generating-overlay" role="status" aria-live="polite"><div className="summary-generating-card">AI生成總評中...</div></div>}</section>}
   </>
 }
