@@ -1,4 +1,4 @@
-# AI Homework Quiz
+# Homework Quiz
 
 瀏覽器本機運作的教師批次個別化測驗工作台。它依照 `DEVELOPMENT_SPEC.md` 將作業來源、學生試卷與教師答案包分離，支援離線學生 HTML、JSON/Markdown 作答格式、客觀題本機評分，以及可插拔的 OpenAI、Gemini、xAI 與 CGU provider。
 
