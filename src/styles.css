@@ -36,6 +36,12 @@ body,button,input,select,textarea,small,.brand-mark,.top-status,.subtitle,.side-
 @media(max-width:640px){.example-description-grid{grid-template-columns:1fr}}
 .content{margin:0 auto}
 .example-description,.example-description p,.example-description-heading span,.example-description-heading strong,.example-description-grid b,.example-description-grid span{font-size:12pt}
+.example-tabs{display:flex;gap:0;overflow-x:auto;border-bottom:1px solid #cfe7dd}
+.example-tab{border:1px solid transparent;border-bottom:0;background:#eef8f4;color:#397568;padding:10px 14px;min-height:42px;font:inherit;font-size:12pt;cursor:pointer;white-space:nowrap}
+.example-tab:hover,.example-tab:focus-visible{background:#e0f2eb;color:#176b60;outline:none}
+.example-tab.active{background:#f5fbf8;color:#0f766e;border-color:#cfe7dd;font-weight:800;position:relative;z-index:1}
+.example-tabs + .example-description{margin-top:-1px;border-top-left-radius:0;border-top-right-radius:0}
+.example-apply-button{display:block;margin:18px auto 0;min-width:220px}
 .provider-card:not(.selected){background:#fff;border-color:#e1ebe7}.provider-card:not(.selected):hover{background:#f7faf8;border-color:#51aa96}.settings-actions{display:flex;gap:10px;flex-wrap:wrap}.settings-action-button{min-width:170px}.page-description{font-size:12px;color:#7b9088;margin:8px 0 0;max-width:760px;line-height:1.6}
 
 .plan-panel>.wide{display:block;margin-left:auto;margin-right:auto}.guidance-block{border:1px solid #e4eee9;border-radius:10px;padding:14px;background:#fbfdfc;margin-bottom:15px}.guidance-block>h3{font-size:11pt;color:#31564b;margin:0 0 9px}.guidance-field{margin-bottom:12px}.guidance-field textarea{width:100%;border:1px solid #dbe7e1;border-radius:7px;padding:10px 11px;font:inherit;font-size:11pt;color:#315148;background:#fff;resize:vertical;min-height:100px}.guidance-examples{padding:0;background:transparent}.guidance-examples-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:9px}.guidance-examples-head span{font-size:11pt;font-weight:700;color:#31564b}.guidance-examples-head small{font-size:11pt;color:#8a9d95}.guidance-example-buttons{display:flex;flex-wrap:wrap;gap:7px}.guidance-example-buttons .small-button{font-size:11pt}.plan-config-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:15px 0 2px}.plan-config-actions .ghost-button{display:inline-flex;align-items:center}.plan-config-actions small{font-size:11pt}

@@ -201,7 +201,7 @@ export default function App() {
 }
 
 function Overview({ onGo, onApplyExamples, sources, bundles, records }: { onGo: (t: Tab) => void; onApplyExamples: (kind: ExampleKind) => void; sources: SourceDocument[]; bundles: QuizBundle[]; records: StudentRecord[] }) {
-  const [hoveredExample, setHoveredExample] = useState<ExampleKind | null>(null)
+  const [selectedExample, setSelectedExample] = useState<ExampleKind>('python')
   const exampleButtons: { kind: ExampleKind; label: string }[] = [
     { kind: 'python', label: 'Python 程式作業' },
     { kind: 'medical', label: '醫學相關作業' },
@@ -210,9 +210,9 @@ function Overview({ onGo, onApplyExamples, sources, bundles, records }: { onGo: 
     { kind: 'general_education', label: '通識' },
     { kind: 'management', label: '管理學科' }
   ]
-  const hoveredSet = hoveredExample ? EXAMPLE_SETS[hoveredExample] : null
-  const hoveredDetail = hoveredExample ? EXAMPLE_DETAILS[hoveredExample] : null
-  return <div className="overview-clean"><div className="hero-card"><span className="hero-kicker">從來源到理解</span><h2>AI 個人化出題：檢核學生對自身作業的理解程度</h2><p className="hero-subtitle">為每一份作業量身打造測驗題目</p></div><div className="example-actions" onMouseLeave={() => setHoveredExample(null)}><small>範例（滑鼠移入查看作業簡介）</small><div className="example-buttons">{exampleButtons.map(({ kind, label }) => <button type="button" className={`example-button ${hoveredExample === kind ? 'active' : ''}`} key={kind} aria-pressed={hoveredExample === kind} onMouseEnter={() => setHoveredExample(kind)} onFocus={() => setHoveredExample(kind)} onClick={() => onApplyExamples(kind)}>{label}</button>)}</div>{hoveredSet && hoveredDetail && <section className="example-description" aria-live="polite"><div className="example-description-heading"><span>作業簡介</span><strong>{hoveredSet.course_title} · {hoveredSet.assignment_title}</strong></div><p>{hoveredDetail.summary}</p><div className="example-description-grid"><div><b>題目方向</b><span>{hoveredDetail.question_focus}</span></div><div><b>說明</b><span>{hoveredDetail.explanation}</span></div></div></section>}</div></div>
+  const selectedSet = EXAMPLE_SETS[selectedExample]
+  const selectedDetail = EXAMPLE_DETAILS[selectedExample]
+  return <div className="overview-clean"><div className="hero-card"><span className="hero-kicker">從來源到理解</span><h2>AI 個人化出題：檢核學生對自身作業的理解程度</h2><p className="hero-subtitle">為每一份作業量身打造測驗題目</p></div><div className="example-actions"><small>範例（點選分頁查看作業簡介）</small><div className="example-tabs" role="tablist" aria-label="作業範例">{exampleButtons.map(({ kind, label }) => <button type="button" role="tab" className={`example-tab ${selectedExample === kind ? 'active' : ''}`} key={kind} id={`example-tab-${kind}`} aria-controls="example-panel" aria-selected={selectedExample === kind} onClick={() => setSelectedExample(kind)}>{label}</button>)}</div><section id="example-panel" role="tabpanel" aria-labelledby={`example-tab-${selectedExample}`} className="example-description"><div className="example-description-heading"><span>作業簡介</span><strong>{selectedSet.course_title} · {selectedSet.assignment_title}</strong></div><p>{selectedDetail.summary}</p><div className="example-description-grid"><div><b>題目方向</b><span>{selectedDetail.question_focus}</span></div><div><b>說明</b><span>{selectedDetail.explanation}</span></div></div><button type="button" className="primary-button example-apply-button" onClick={() => onApplyExamples(selectedExample)}>套用範例（{selectedSet.students.length} 份作業）</button></section></div></div>
 }
 function Metric({ label, value, hint }: { label: string; value: number; hint: string }) { return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{hint}</small></div> }
 function WorkCard({ n, title, text, onClick }: { n: string; title: string; text: string; onClick: () => void }) { return <button className="work-card" onClick={onClick}><span>{n}</span><h3>{title} <i>↗</i></h3><p>{text}</p></button> }
