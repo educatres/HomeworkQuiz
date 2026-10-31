@@ -174,6 +174,64 @@ type ReviewRow = { question_id: string; type: QuestionType; question: string; st
 type ReviewDraft = { pair_id: string; student_id: string; course_title: string; assignment_title: string; rows: ReviewRow[] }
 type ReportSortKey = 'student' | 'score'
 
+function commentFileStem(pair: GradingPair, draft: ReviewDraft) {
+  const source = pair.submission?.file_name || pair.key?.file_name || `${draft.student_id}.htm`
+  const stem = fileStem(source).replace(/(?:_answer_Student|_assignment_Student|_Student|_Teacher|_Q|_A)$/i, '')
+  return `${stem || draft.student_id}_Comment`
+}
+function reviewMarkdown(draft: ReviewDraft, summary: string) {
+  const lines = [`# ${draft.assignment_title || '學生作答與理解評語'}`, '', `- 學生：${draft.student_id}`, `- 課程：${draft.course_title || '未命名課程'}`, '', '## 學生作答與理解摘要', '', summary || '尚未產生整體摘要。', '', '## 題目評語', '']
+  draft.rows.forEach((row, index) => {
+    lines.push(`### ${row.question_id || `Q${String(index + 1).padStart(2, '0')}`} ${row.question}`, '', `- 學生回答：${row.student_answer}`, `- 參考答案：${row.reference_answer}`, `- 得分：${row.teacher_score.trim() || row.ai_score} / ${row.max_points}`, `- 評語：${row.feedback || '未提供'}`, '')
+  })
+  return lines.join('\n')
+}
+function utf16Hex(value: string) {
+  let hex = 'FEFF'
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0
+    if (code <= 0xffff) hex += code.toString(16).padStart(4, '0')
+    else {
+      const adjusted = code - 0x10000
+      hex += (0xd800 + (adjusted >> 10)).toString(16) + (0xdc00 + (adjusted & 0x3ff)).toString(16)
+    }
+  }
+  return hex.toUpperCase()
+}
+function makeReviewPdf(text: string) {
+  const plain = text.replace(/^#+\s*/gm, '').replace(/\*\*/g, '').replace(/`/g, '')
+  const lines = plain.split(/\r?\n/).flatMap(line => {
+    const characters = Array.from(line)
+    const wrapped: string[] = []
+    for (let index = 0; index < characters.length; index += 42) wrapped.push(characters.slice(index, index + 42).join('') || ' ')
+    return wrapped.length ? wrapped : [' ']
+  })
+  const pageLines = 40
+  const pages = Array.from({ length: Math.max(1, Math.ceil(lines.length / pageLines)) }, (_, page) => lines.slice(page * pageLines, (page + 1) * pageLines))
+  const objects: string[] = ['', '']
+  const pageIds: number[] = []; const contentIds: number[] = []
+  const addObject = (value: string) => { objects.push(value); return objects.length - 1 }
+  pages.forEach(() => { pageIds.push(addObject('')); contentIds.push(addObject('')) })
+  const fontId = addObject('')
+  const cidFontId = addObject('')
+  objects[1] = `<< /Type /Catalog /Pages 2 0 R >>`
+  objects[2] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`
+  pages.forEach((page, index) => {
+    const commands = ['BT', '/F1 12 Tf', '50 790 Td']
+    page.forEach((line, lineIndex) => { if (lineIndex) commands.push('0 -18 Td'); commands.push(`<${utf16Hex(line)}> Tj`) })
+    commands.push('ET')
+    const stream = commands.join('\n')
+    objects[contentIds[index]] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`
+    objects[pageIds[index]] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentIds[index]} 0 R >>`
+  })
+  objects[fontId] = `<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniCNS-UTF16-H /DescendantFonts [${cidFontId} 0 R] >>`
+  objects[cidFontId] = `<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (CNS1) /Supplement 0 >> /DW 1000 >>`
+  let pdf = '%PDF-1.4\n'; const offsets = [0]
+  for (let id = 1; id < objects.length; id += 1) { offsets[id] = pdf.length; pdf += `${id} 0 obj\n${objects[id]}\nendobj\n` }
+  const xref = pdf.length; pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  return new Blob([pdf], { type: 'application/pdf' })
+}
+
 function gradingFilenameKey(fileName: string) {
   let stem = (fileName.split(/[\\/]/).pop() ?? fileName).replace(/\.(json|htm|html)$/i, '')
   for (let i = 0; i < 2; i += 1) stem = stem.replace(/(?:[._-](?:q|a|key|answer|answers|submission|submit|student|teacher))$/i, '')
@@ -477,6 +535,13 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
     }
   }
   function downloadReport() { const header = ['學生', '分數', '滿分', '學生作答與理解摘要']; const rows = results.map(row => [row.student_id, row.score ?? '', row.max ?? '', row.message].map(csvCell).join(',')); downloadText([header.map(csvCell).join(','), ...rows].join('\n'), `grading_report_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8') }
+  function downloadReview(kind: 'text' | 'pdf') {
+    if (!reviewDraft) return
+    const markdown = reviewMarkdown(reviewDraft, summaryByPair[reviewDraft.pair_id] ?? '')
+    const stem = commentFileStem(pairs.find(pair => pair.id === reviewDraft.pair_id) ?? { id: reviewDraft.pair_id, student_id: reviewDraft.student_id, status: 'missing_exam', message: '' }, reviewDraft)
+    if (kind === 'text') downloadText(markdown, `${stem}.txt`, 'text/plain;charset=utf-8')
+    else downloadBlob(makeReviewPdf(markdown), `${stem}.pdf`)
+  }
   function toggleReportSort(key: ReportSortKey) { setReportSort(current => current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }) }
   const visibleResults = useMemo(() => [...results].sort((a, b) => { const comparison = reportSort.key === 'student' ? a.student_id.localeCompare(b.student_id, 'zh-Hant', { numeric: true }) : a.score === undefined && b.score === undefined ? 0 : a.score === undefined ? 1 : b.score === undefined ? -1 : a.score - b.score; return reportSort.direction === 'asc' ? comparison : -comparison }), [results, reportSort])
   const zoneItems: Record<PairZone, string[]> = { unmatched: [...new Set([...zones.unmatched, ...pairs.filter(pair => pair.status === 'missing_submission' && pair.key?.file_name).map(pair => pair.key!.file_name)])], student: zones.student, unknown: [...new Set([...zones.unknown, ...files.filter(file => file.kind === 'invalid').map(file => file.file_name)])] }
@@ -498,6 +563,6 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
     <section className="panel grading-import-panel"><div className="panel-title"><div><h2>匯入檔案 <span className="count">{files.length}</span></h2><p>檔名相同或可由學生 ID／quiz ID 對應的檔案會自動配對。</p></div><button className="ghost-button" disabled={!files.length || busy} onClick={() => { setFiles([]); setResults([]); setAssignments({}); setReleasedFiles([]); setTeacherOverrides({}); setSummaryByPair({}); setAiFeedbackByPair({}); setGradingProgress({}); setReviewDraft(null); setZones({ unmatched: [], student: [], unknown: [] }); setMessage('') }}>清空清單</button></div><div className={`dropzone grading-dropzone ${drag ? 'drag' : ''}`} onDragOver={event => { event.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={event => { event.preventDefault(); setDrag(false); void importFiles(event.dataTransfer.files) }}><div className="upload-icon">↑</div><h2>拖曳作答與參考答案到這裡</h2><p>支援學生交卷 JSON、教師答案 JSON 或 _Teacher.htm；可一次選取或拖曳多個檔案。</p><label className="primary-button">選擇檔案<input type="file" accept=".json,.htm,.html,application/json,text/html" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files) }} /></label></div>{files.length ? <div className="file-table grading-import-table"><div className="file-row header"><span>檔案</span><span>類型</span><span>學生</span><span>狀態</span></div>{files.map((file, index) => { const paired = pairedFileNames.has(file.file_name); return <div className="file-row" key={`${file.file_name}-${index}`} draggable onDragStart={event => beginDrag(event, file.file_name)}><span className="file-name">{file.file_name}</span><span>{fileKindLabel(file.kind)}</span><span>{file.student_id || '—'}</span><span className={paired ? 'file-paired' : 'file-unpaired'}>{paired ? '已配對' : '未配對'}</span></div> })}</div> : <div className="empty-state">尚未匯入檔案。</div>}</section>
     {files.length > 0 && <section className="panel"><div className="panel-title"><div><h2>配對檢查</h2><p>{message || '可將檔案拖到學生列或下方分類區；確認後再按批改。'}</p></div><button className="primary-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>{busy ? '批改中…' : '批改'}</button></div><div className="pair-drop-zones">{zoneDefinitions.map(zone => <div className="pair-drop-zone" key={zone.id} onDragOver={event => event.preventDefault()} onDrop={event => moveToZone(event, zone.id)}><h3>{zone.label}</h3><small>{zone.hint}</small><div className="pair-drop-items">{zoneItems[zone.id].map(fileName => <span key={fileName} draggable onDragStart={event => beginDrag(event, fileName)}>{fileName}</span>)}</div></div>)}</div>{pairs.length ? <div className="grading-pair-table"><div className="grading-pair-row header"><span>學生</span><span>作答檔</span><span>參考答案</span><span>狀態</span><span>批改</span></div>{pairs.map(pair => { const report = results.find(row => row.pair_id === pair.id); return <div className="grading-pair-row" key={pair.id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const fileName = draggedFile(event); if (fileName) assignFile(fileName, pair) }}><span>{pair.student_id}</span><span className="draggable-file" draggable={!!pair.submission} onDragStart={event => pair.submission && beginDrag(event, pair.submission.file_name)}>{pair.submission?.file_name || '—'}</span><span className="draggable-file" draggable={!!pair.key} onDragStart={event => pair.key && beginDrag(event, pair.key.file_name)}>{pair.key?.file_name || (pair.fallbackKey ? '目前批次答案' : '—')}</span>{renderPairStatus(pair)}<button className="small-button" disabled={busy || pair.status !== 'matched'} onClick={() => void gradeOne(pair)}>{report ? '重批' : '批改'}</button></div> })}</div> : <div className="empty-state">匯入檔案後會在這裡顯示配對結果。</div>}</section>}
     {results.length > 0 && <section className="panel"><div className="panel-title"><div><h2>全班分數報告</h2><p>{message}</p></div><div className="report-actions"><button className="ghost-button" onClick={runGrading} disabled={busy || !pairs.some(pair => pair.status === 'matched')}>重新批改</button><button className="ghost-button" onClick={downloadReport}>下載分數報告 CSV</button></div></div><div className="grading-report-table"><div className="grading-report-row header"><span>覆核</span><span><button className="report-sort-button" onClick={() => toggleReportSort('student')}>學生 {reportSort.key === 'student' ? (reportSort.direction === 'asc' ? '↑' : '↓') : '↕'}</button></span><span><button className="report-sort-button" onClick={() => toggleReportSort('score')}>分數 {reportSort.key === 'score' ? (reportSort.direction === 'asc' ? '↑' : '↓') : '↕'}</button></span><span>學生作答與理解摘要</span></div>{visibleResults.map((row, index) => { const pair = pairs.find(item => item.id === row.pair_id); const percentage = row.score === undefined || !row.max ? undefined : row.score / row.max * 100; const scoreTone = percentage === undefined ? 'score-none' : percentage <= 40 ? 'score-low' : percentage <= 60 ? 'score-mid' : 'score-high'; return <div className="grading-report-row" key={`${row.pair_id}-${index}`}><span><button className="small-button review-button" disabled={!pair || pair.status !== 'matched'} onClick={() => pair && void openReview(pair)}>覆核</button></span><span>{row.student_id}</span><span className="score-cell"><strong>{row.score === undefined ? '—' : `${row.score} / ${row.max}`}</strong>{percentage !== undefined && <i className={`score-indicator ${scoreTone}`} aria-label={`答對 ${percentage.toFixed(0)}%`} />}</span><span title={row.message}>{row.message}</span></div> })}</div></section>}
-    {reviewDraft && <section className="panel grading-review-panel"><div className="panel-title"><div><h2>覆核：{reviewDraft.student_id}</h2><p>{reviewAiBusy ? 'AI 正在逐題產生課程理解評語…' : '教師打分會覆蓋 AI 分數；評語可直接編輯。選擇題的批改建議欄留白。'}</p></div><div className="review-actions"><button className="primary-button" disabled={reviewAiBusy || summaryBusy} onClick={() => void confirmReview}>{summaryBusy ? '摘要生成中…' : '學生作答與理解摘要'}</button><button className="ghost-button" onClick={cancelReview}>取消</button></div></div><div className="grading-review-table"><div className="grading-review-row header"><span>每一題題目</span><span>學生回答</span><span>參考答案</span><span>批改建議</span><span>教師打分（註記會覆蓋 AI 評分）</span><span>重新寫評語</span></div>{reviewDraft.rows.map(row => <div className="grading-review-row" key={row.question_id}><div><b>{row.question_id}</b><p>{row.question}</p></div><div>{row.student_answer}</div><div>{row.reference_answer}</div><div>{row.suggestion}</div><div><small>AI：{row.ai_score} / {row.max_points}</small><input type="number" min="0" max={row.max_points} step="0.01" disabled={reviewAiBusy || summaryBusy} value={row.teacher_score} placeholder="留白沿用 AI" onChange={event => updateReviewRow(row.question_id, 'teacher_score', event.target.value)} /></div><textarea rows={4} disabled={reviewAiBusy || summaryBusy} value={row.feedback} onChange={event => updateReviewRow(row.question_id, 'feedback', event.target.value)} aria-label={`${row.question_id} 評語`} /></div>)}</div></section>}
+    {reviewDraft && <section className="panel grading-review-panel"><div className="panel-title"><div><h2>覆核：{reviewDraft.student_id}</h2><p>{reviewAiBusy ? 'AI 正在逐題產生課程理解評語…' : '教師打分會覆蓋 AI 分數；評語可直接編輯。選擇題的批改建議欄留白。'}</p></div><div className="review-actions"><button className="primary-button" disabled={reviewAiBusy || summaryBusy} onClick={() => void confirmReview}>{summaryBusy ? '摘要生成中…' : '學生作答與理解摘要'}</button><button className="ghost-button" disabled={reviewAiBusy || summaryBusy} onClick={() => downloadReview('text')}>下載 TXT</button><button className="ghost-button" disabled={reviewAiBusy || summaryBusy} onClick={() => downloadReview('pdf')}>下載 PDF</button><button className="ghost-button" onClick={cancelReview}>取消</button></div></div><div className="grading-review-table"><div className="grading-review-row header"><span>每一題題目</span><span>學生回答</span><span>參考答案</span><span>批改建議</span><span>教師打分（註記會覆蓋 AI 評分）</span><span>重新寫評語</span></div>{reviewDraft.rows.map(row => <div className="grading-review-row" key={row.question_id}><div><b>{row.question_id}</b><p>{row.question}</p></div><div>{row.student_answer}</div><div>{row.reference_answer}</div><div>{row.suggestion}</div><div><small>AI：{row.ai_score} / {row.max_points}</small><input type="number" min="0" max={row.max_points} step="0.01" disabled={reviewAiBusy || summaryBusy} value={row.teacher_score} placeholder="留白沿用 AI" onChange={event => updateReviewRow(row.question_id, 'teacher_score', event.target.value)} /></div><textarea rows={4} disabled={reviewAiBusy || summaryBusy} value={row.feedback} onChange={event => updateReviewRow(row.question_id, 'feedback', event.target.value)} aria-label={`${row.question_id} 評語`} /></div>)}</div></section>}
   </>
 }
