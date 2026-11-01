@@ -21,6 +21,7 @@ import { detectPromptInjectionInSource, detectPromptInjectionInSubmission, merge
 import { wrapUntrustedData } from '../features/quiz-generation/prompts'
 import '../styles.css'
 import { TriplePercentageSlider } from '../components/TriplePercentageSlider'
+const brandLogoUrl = new URL('../../logo.png', import.meta.url).href
 
 type Tab = 'overview' | 'settings' | 'import' | 'quiz' | 'grading'
 type ExamRowStatus = 'queued' | 'generating' | 'completed' | 'failed'
@@ -179,7 +180,7 @@ function selectLatestModel(provider: AppSettings['provider'], models: ModelInfo[
   if (provider === 'cgu') return CGU_MODEL_OPTIONS.find(model => model.id === CGU_DEFAULT_MODEL)
   return models[0]
 }
-function BrandLogo() { return <img src="./logo.png" alt="Homework Quiz 標誌" className="brand-logo" /> }
+function BrandLogo() { return <img src={brandLogoUrl} alt="Homework Quiz 標誌" className="brand-logo" /> }
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('overview'); const [settings, setSettings] = useState<AppSettings>(loadSettings()); const [keys, setKeys] = useState(loadKeys()); const [connection, setConnection] = useState(''); const [models, setModels] = useState<ModelInfo[]>([]); const [showKey, setShowKey] = useState(false); const [modelTestStatus, setModelTestStatus] = useState<'idle' | 'testing' | 'available' | 'empty' | 'error'>('idle'); const [busy, setBusy] = useState(false); const [sources, setSources] = useState<SourceDocument[]>([]); const [records, setRecords] = useState<StudentRecord[]>([]); const [bundles, setBundles] = useState<QuizBundle[]>([]); const [examRows, setExamRows] = useState<ExamRow[]>([]); const [plan, setPlan] = useState<BatchPlan>(loadPlan()); const [notice, setNotice] = useState('');
