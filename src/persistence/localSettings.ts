@@ -2,6 +2,7 @@ import { DEFAULT_PLAN, type BatchPlan } from '../domain/types'
 import { CGU_DEFAULT_MODEL } from '../providers/cguModels'
 export type AppProvider = 'mock' | 'openai' | 'google' | 'xai' | 'cgu'
 export interface AppSettings { provider: AppProvider; model: string; base_url: string; language: 'zh-TW' | 'en'; concurrency: number; rememberKey: boolean; theme: 'light' | 'dark' }
+export const GOOGLE_DEFAULT_MODEL = 'gemini-flash-latest'
 export const SETTINGS_KEY = 'aihwq.settings.v1'; export const KEYS_KEY = 'meetingtutor.api-keys.v1'; export const MODEL_CONFIG_KEY = 'meetingtutor.model-config.v1'; export const ACTIVE_BATCH_KEY = 'aihwq.activeBatch.v1'; export const PLAN_KEY = 'aihwq.plan.v1'
 export const DEFAULT_BASE_URLS: Record<AppProvider, string> = { mock: '', openai: 'https://api.openai.com/v1', google: 'https://generativelanguage.googleapis.com/v1beta', xai: 'https://api.x.ai/v1', cgu: 'https://air.cgu.edu.tw/cgullmapi/v1' }
 export const DEFAULT_SETTINGS: AppSettings = { provider: 'mock', model: 'gpt-4o-mini', base_url: '', language: 'zh-TW', concurrency: 2, rememberKey: true, theme: 'light' }
@@ -13,7 +14,8 @@ export const loadSettings = () => {
   const candidate = modelConfig.id ?? saved.provider
   const provider = candidate === 'openai' || candidate === 'google' || candidate === 'xai' || candidate === 'cgu' || candidate === 'mock' ? candidate : DEFAULT_SETTINGS.provider
   const model = modelConfig.modelId ?? saved.model ?? DEFAULT_SETTINGS.model
-  return { ...DEFAULT_SETTINGS, ...saved, provider, model: provider === 'cgu' ? CGU_DEFAULT_MODEL : model, ...(modelConfig.baseUrl ? { base_url: modelConfig.baseUrl } : {}) }
+  const googleModel = modelConfig.modelId?.trim() || saved.model?.trim() || GOOGLE_DEFAULT_MODEL
+  return { ...DEFAULT_SETTINGS, ...saved, provider, model: provider === 'cgu' ? CGU_DEFAULT_MODEL : provider === 'google' ? googleModel : model, ...(modelConfig.baseUrl ? { base_url: modelConfig.baseUrl } : {}) }
 }
 export const saveSettings = (settings: AppSettings) => write(SETTINGS_KEY, settings)
 export const saveModelConfig = (settings: AppSettings) => write(MODEL_CONFIG_KEY, { id: settings.provider, baseUrl: settings.base_url, modelId: settings.model })

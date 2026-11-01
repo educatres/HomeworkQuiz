@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_PLAN } from '../domain/types'
-import { KEYS_KEY, MODEL_CONFIG_KEY, PLAN_KEY, SETTINGS_KEY, clearKeys, clearPlan, loadKeys, loadPlan, loadSettings, saveKeys, savePlan } from './localSettings'
+import { GOOGLE_DEFAULT_MODEL, KEYS_KEY, MODEL_CONFIG_KEY, PLAN_KEY, SETTINGS_KEY, clearKeys, clearPlan, loadKeys, loadPlan, loadSettings, saveKeys, savePlan } from './localSettings'
 
 describe('reference API key storage', () => {
   const original = (globalThis as any).localStorage
@@ -22,6 +22,12 @@ describe('reference API key storage', () => {
     ])
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) } })
     expect(loadSettings()).toMatchObject({ provider: 'cgu', model: 'gpt-oss:20b' })
+  })
+
+  it('uses the Gemini flash latest alias when no Google model is saved', () => {
+    const values = new Map<string, string>([[SETTINGS_KEY, JSON.stringify({ provider: 'google' })]])
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) } })
+    expect(loadSettings()).toMatchObject({ provider: 'google', model: GOOGLE_DEFAULT_MODEL })
   })
 
   it('persists the question plan and teacher guidance locally', () => {
