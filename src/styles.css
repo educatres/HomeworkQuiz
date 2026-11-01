@@ -82,3 +82,9 @@ body,button,input,select,textarea,small,.brand-mark,.top-status,.subtitle,.side-
 .panel,.hero-card,.principles,.metric,.work-card,.provider-card,.storage-card,.dropzone,.plan-config-panel,.weight-editor,.guidance-block,.pair-drop-zone,.review-summary-editor{box-shadow:0 8px 22px rgba(24,67,56,.14)}
 
 .security-summary{display:flex;flex-wrap:wrap;gap:8px;margin:-8px 0 16px;padding:10px 12px;border:1px solid #f0d8a3;background:#fffaf0;border-radius:8px}.security-summary>div{display:flex;align-items:center;gap:6px;font-size:11pt}.security-alert{display:inline-block;color:#9d4b22;vertical-align:middle}.security-alert summary{cursor:pointer;font-weight:800;color:#a34c42}.security-alert.high summary{color:#a33b32}.security-alert.medium summary{color:#9d6b18}.security-alert>div{min-width:260px;max-width:460px;padding:8px 10px;background:#fff8e7;border:1px solid #eed7a8;border-radius:7px;white-space:normal}.security-alert p{margin:0 0 7px;line-height:1.45}.security-alert p:last-child{margin-bottom:0}.security-alert small{overflow-wrap:anywhere}.security-clear{color:#2d846b;font-size:10pt}.security-review{margin:0 0 12px;padding:10px 12px;background:#fff8e7;border:1px solid #eed7a8;border-radius:8px;color:#775a27;font-size:11pt}.security-review>span:last-child{margin-left:8px;color:#8d6b32}
+
+/* Keep the local data controls at the viewport bottom while the main page scrolls. */
+.sidebar{flex:0 0 235px;position:sticky;top:0;height:100vh;align-self:flex-start;overflow-y:auto;z-index:5}
+.app-shell.offline-mode .sidebar{top:38px;height:calc(100vh - 38px)}
+@media(max-width:900px){.sidebar{flex-basis:190px}}
+@media(max-width:640px){.sidebar{flex-basis:auto;position:static;height:auto;overflow-y:visible}}
