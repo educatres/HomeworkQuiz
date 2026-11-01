@@ -1,4 +1,5 @@
 import { DEFAULT_PLAN, type BatchPlan } from '../domain/types'
+import { CGU_DEFAULT_MODEL } from '../providers/cguModels'
 export type AppProvider = 'mock' | 'openai' | 'google' | 'xai' | 'cgu'
 export interface AppSettings { provider: AppProvider; model: string; base_url: string; language: 'zh-TW' | 'en'; concurrency: number; rememberKey: boolean; theme: 'light' | 'dark' }
 export const SETTINGS_KEY = 'aihwq.settings.v1'; export const KEYS_KEY = 'meetingtutor.api-keys.v1'; export const MODEL_CONFIG_KEY = 'meetingtutor.model-config.v1'; export const ACTIVE_BATCH_KEY = 'aihwq.activeBatch.v1'; export const PLAN_KEY = 'aihwq.plan.v1'
@@ -11,7 +12,8 @@ export const loadSettings = () => {
   const modelConfig = read<{ id?: AppProvider; baseUrl?: string; modelId?: string }>(MODEL_CONFIG_KEY, {})
   const candidate = modelConfig.id ?? saved.provider
   const provider = candidate === 'openai' || candidate === 'google' || candidate === 'xai' || candidate === 'cgu' || candidate === 'mock' ? candidate : DEFAULT_SETTINGS.provider
-  return { ...DEFAULT_SETTINGS, ...saved, provider, ...(modelConfig.baseUrl ? { base_url: modelConfig.baseUrl } : {}), ...(modelConfig.modelId ? { model: modelConfig.modelId } : {}) }
+  const model = modelConfig.modelId ?? saved.model ?? DEFAULT_SETTINGS.model
+  return { ...DEFAULT_SETTINGS, ...saved, provider, model: provider === 'cgu' ? CGU_DEFAULT_MODEL : model, ...(modelConfig.baseUrl ? { base_url: modelConfig.baseUrl } : {}) }
 }
 export const saveSettings = (settings: AppSettings) => write(SETTINGS_KEY, settings)
 export const saveModelConfig = (settings: AppSettings) => write(MODEL_CONFIG_KEY, { id: settings.provider, baseUrl: settings.base_url, modelId: settings.model })
