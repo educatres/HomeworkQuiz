@@ -15,6 +15,8 @@ npm test
 
 離線示範模式可先匯入 TXT、Markdown 或程式碼並建立試卷。真正 AI 出題的 provider adapter、prompt builder 與 JSON 驗證位於 `src/providers`、`src/features/quiz-generation` 和 `src/domain`，可在供應商允許瀏覽器 CORS 時接上。
 
+Google AI Studio 免費 API Key 的圖文申請說明：[`doc/googleAIstudioAPI/google-ai-studio-api-key-guide.html`](doc/googleAIstudioAPI/google-ai-studio-api-key-guide.html)。建置後也會輸出為 `dist/google-ai-studio-api-key-guide.html`，可從「AI 設定」的 Google Gemini provider 入口開啟。
+
 ## License
 
 [![Creative Commons License](https://licensebuttons.net/l/by-nc-sa/4.0/88x31.png)](https://creativecommons.org/licenses/by-nc-sa/4.0/)

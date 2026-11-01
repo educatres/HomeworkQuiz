@@ -36,6 +36,7 @@ body,button,input,select,textarea,small,.brand-mark,.top-status,.subtitle,.side-
 @media(max-width:640px){.example-description-grid{grid-template-columns:1fr}}
 .content{margin:0 auto}
 .example-description,.example-description p,.example-description-heading span,.example-description-heading strong,.example-description-grid b,.example-description-grid span{font-size:12pt}
+.google-guide-row{display:flex;justify-content:flex-start;margin:14px 0 4px;padding-top:14px;border-top:1px solid #e4eee9}.google-guide-button{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:8px 14px;border:1px solid #d78b1b;border-radius:8px;background:#fff4c7;color:#8a5a12;font:inherit;font-size:11pt;font-weight:800;text-decoration:none;box-shadow:0 2px 4px rgba(91,66,19,.08)}.google-guide-button:hover,.google-guide-button:focus-visible{background:#ffe9a3;border-color:#bd7410;color:#754709;text-decoration:none;outline:2px solid #f1c76b;outline-offset:2px}
 .overview-clean .hero-card{height:128px;min-height:128px;padding:18px 40px;display:flex;flex-direction:column;justify-content:center}
 .overview-clean .hero-card h2{margin:0 0 8px}
 .overview-clean .hero-card p{margin:0}
