@@ -4,6 +4,22 @@ import { OpenAICompatibleProvider } from './openai'
 describe('OpenAI-compatible provider request options', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('tests the selected model with a completion request', async () => {
+    let requestUrl = ''
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requestUrl = String(input)
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return { ok: true, json: async () => ({ choices: [{ message: { content: 'OK' } }] }), text: async () => '' } as Response
+    }))
+
+    const provider = new OpenAICompatibleProvider({ provider: 'cgu', apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'gpt-oss:20b' }, 'cgu')
+    await expect(provider.testConnection()).resolves.toMatchObject({ ok: true })
+
+    expect(requestUrl).toBe('https://example.test/v1/chat/completions')
+    expect(requestBody?.model).toBe('gpt-oss:20b')
+  })
+
   it('does not send temperature to CGU chat completions', async () => {
     let requestBody: Record<string, unknown> | undefined
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

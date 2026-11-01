@@ -39,7 +39,13 @@ export class OpenAICompatibleProvider implements LlmProvider { name: 'openai' | 
   async complete(prompt: string, system = 'You are a helpful assistant. Return valid JSON only.', signal?: AbortSignal): Promise<ProviderResponse> { const base = this.config.baseUrl.replace(/\/$/, ''); const headers = { 'Content-Type': 'application/json', ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}) }; if (!this.config.model?.trim()) throw new Error(`${this.name} 未設定模型 ID，請先在 AI 設定中測試 Key 並選擇模型。`); if (this.name === 'cgu' && /luna/i.test(this.config.model)) { const response = await fetch(`${base}/responses`, { method: 'POST', signal, headers, body: JSON.stringify({ model: this.config.model, input: prompt, instructions: system, max_output_tokens: 4096, reasoning: { effort: 'none' } }) }); if (!response.ok) throw await providerError(response, 'CGU responses'); const json = await response.json(); const text = extractResponseText(json); if (!text.trim()) throw new Error('CGU responses 回傳空白內容（可能是模型未產生文字或回應格式不相容）。'); return { text, raw: json, usage: json.usage }
     } const url = `${base}/chat/completions`; const body: Record<string, unknown> = { model: this.config.model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] }; if (this.name === 'cgu') body.max_completion_tokens = 4096; else body.temperature = 0.2; const response = await fetch(url, { method: 'POST', signal, headers, body: JSON.stringify(body) }); if (!response.ok) throw await providerError(response, `${this.name === 'cgu' ? 'CGU' : this.name} chat/completions`); const json = await response.json(); const text = extractResponseText(json); if (!text.trim()) throw new Error(`${this.name} chat/completions 回傳空白內容。`); return { text, raw: json, usage: json.usage }
   }
-  async testConnection(signal?: AbortSignal) { try { const models = await this.listModels(signal); return { ok: true, message: models.length ? `連線成功，已讀取 ${models.length} 個模型。` : '連線成功，但 provider 沒有回傳可列舉的模型。' } } catch (error) { return { ok: false, message: classifyProviderError(error) } }
+  async testConnection(signal?: AbortSignal) {
+    try {
+      await this.complete('Reply with the single word OK.', 'Reply only OK.', signal)
+      return { ok: true, message: '連線成功，已收到模型回覆。' }
+    } catch (error) {
+      return { ok: false, message: classifyProviderError(error) }
+    }
   }
 }
 export const createOpenAIProvider = (config: ProviderConfig) => new OpenAICompatibleProvider(config, 'openai')
