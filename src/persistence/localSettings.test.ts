@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_PLAN } from '../domain/types'
-import { GOOGLE_DEFAULT_MODEL, KEYS_KEY, MODEL_CONFIG_KEY, PLAN_KEY, SETTINGS_KEY, clearKeys, clearPlan, loadKeys, loadPlan, loadSettings, saveKeys, savePlan } from './localSettings'
+import { DEFAULT_BASE_URLS, GOOGLE_DEFAULT_MODEL, KEYS_KEY, MODEL_CONFIG_KEY, PLAN_KEY, SETTINGS_KEY, clearKeys, clearPlan, loadKeys, loadPlan, loadSettings, saveKeys, savePlan } from './localSettings'
 
 describe('reference API key storage', () => {
   const original = (globalThis as any).localStorage
@@ -24,10 +24,24 @@ describe('reference API key storage', () => {
     expect(loadSettings()).toMatchObject({ provider: 'cgu', model: 'gpt-oss:20b' })
   })
 
-  it('uses the Gemini flash latest alias when no Google model is saved', () => {
+  it('uses the Gemini flash lite latest alias when no Google model is saved', () => {
     const values = new Map<string, string>([[SETTINGS_KEY, JSON.stringify({ provider: 'google' })]])
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) } })
     expect(loadSettings()).toMatchObject({ provider: 'google', model: GOOGLE_DEFAULT_MODEL })
+  })
+
+  it('defaults a fresh browser to Google AI Studio and Flash Lite', () => {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null } })
+    expect(loadSettings()).toMatchObject({ provider: 'google', model: 'gemini-flash-lite-latest', base_url: DEFAULT_BASE_URLS.google })
+  })
+
+  it.each(['openai', 'xai'])('migrates a disabled %s selection without reusing its endpoint or model', provider => {
+    const values = new Map<string, string>([
+      [SETTINGS_KEY, JSON.stringify({ provider, model: 'old-model', base_url: 'https://old.example/v1', language: 'en' })],
+      [MODEL_CONFIG_KEY, JSON.stringify({ id: provider, modelId: 'old-model', baseUrl: 'https://old.example/v1' })]
+    ])
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null } })
+    expect(loadSettings()).toMatchObject({ provider: 'google', model: GOOGLE_DEFAULT_MODEL, base_url: DEFAULT_BASE_URLS.google, language: 'en' })
   })
 
   it('persists the question plan and teacher guidance locally', () => {
