@@ -21,7 +21,7 @@ describe('reference API key storage', () => {
       [MODEL_CONFIG_KEY, JSON.stringify({ id: 'cgu', modelId: 'luna-1' })]
     ])
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) } })
-    expect(loadSettings()).toMatchObject({ provider: 'cgu', model: 'gpt-oss:20b' })
+    expect(loadSettings()).toMatchObject({ provider: 'cgu', model: 'gemma-4-26b-a4b-it' })
   })
 
   it('uses the Gemini flash lite latest alias when no Google model is saved', () => {

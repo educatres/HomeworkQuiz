@@ -8,6 +8,6 @@ describe('CGU model selector', () => {
   })
 
   it('uses gpt-oss:20b as the default', () => {
-    expect(CGU_DEFAULT_MODEL).toBe('gpt-oss:20b')
+    expect(CGU_DEFAULT_MODEL).toBe('gemma-4-26b-a4b-it')
   })
 })
