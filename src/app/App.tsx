@@ -10,7 +10,7 @@ import { DEFAULT_PLAN } from '../domain/types'
 import { makeDemoBundle } from '../features/quiz-generation/mockGeneration'
 import { generateExamWithProvider } from '../features/quiz-generation/pipeline'
 import { generateStudentHtml, generateTeacherAnswerHtml, makeStudentZip, makeTeacherZip } from '../features/student-export/generator'
-import { hasActiveApiRequests, subscribeToApiRequests } from '../providers/request'
+import { hasActiveApiRequests, REQUEST_TIMEOUT_SECONDS, subscribeToApiRequests } from '../providers/request'
 import { providerFor } from '../providers/api-tests'
 import { CGU_DEFAULT_MODEL, CGU_MODEL_OPTIONS } from '../providers/cguModels'
 import { classifyProviderError } from '../providers/types'
@@ -776,5 +776,5 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
 
 function ApiRequestNotice() {
   const active = useSyncExternalStore(subscribeToApiRequests, hasActiveApiRequests)
-  return <div role="status">{active && <div className="api-request-notice">AI API ???????????????????????????? 240 ??</div>}</div>
+  return <div role="status">{active && <div className="api-request-notice">AI API ???????????????????????????? {REQUEST_TIMEOUT_SECONDS} ??</div>}</div>
 }

@@ -1,4 +1,4 @@
-﻿const REQUEST_TIMEOUT_MS = 240_000
+﻿export const REQUEST_TIMEOUT_SECONDS = 360
 let activeRequests = 0
 const listeners = new Set<() => void>()
 
@@ -22,8 +22,8 @@ export async function requestJson(
 
   const cancel = () => controller.abort(callerSignal?.reason)
   callerSignal?.addEventListener('abort', cancel, { once: true })
-  const timeoutError = new Error('API 請求逾時（240 秒），請重試。')
-  const timer = setTimeout(() => controller.abort(timeoutError), REQUEST_TIMEOUT_MS)
+  const timeoutError = new Error(`API 請求逾時（${REQUEST_TIMEOUT_SECONDS} 秒），請重試。`)
+  const timer = setTimeout(() => controller.abort(timeoutError), REQUEST_TIMEOUT_SECONDS * 1000)
 
   activeRequests++
   listeners.forEach(listener => listener())

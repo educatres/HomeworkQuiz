@@ -6,7 +6,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('keeps the notice active while reading a response and aborts after 240 seconds', async () => {
+it('keeps the notice active while reading a response and aborts after 360 seconds', async () => {
   vi.useFakeTimers()
   vi.stubGlobal('fetch', vi.fn(async (_url, { signal }: RequestInit) => ({
     ok: true,
@@ -16,8 +16,8 @@ it('keeps the notice active while reading a response and aborts after 240 second
   })))
 
   const request = requestJson('https://example.test', {}, async () => new Error('HTTP error'))
-  const rejection = expect(request).rejects.toThrow('240')
-  await vi.advanceTimersByTimeAsync(239_999)
+  const rejection = expect(request).rejects.toThrow('360')
+  await vi.advanceTimersByTimeAsync(359_999)
   expect(hasActiveApiRequests()).toBe(true)
   await vi.advanceTimersByTimeAsync(1)
   await rejection
