@@ -40,3 +40,36 @@ describe('strict question output validation', () => {
     await expect(generateQuestionsByPlan(source, plan, provider)).rejects.toThrow('恰好有四個 options')
   })
 })
+
+function providerReturningSequence(payloads: unknown[], prompts: string[] = []): LlmProvider {
+  let index = 0
+  return { name: 'mock', complete: async (prompt: string) => { prompts.push(prompt); const payload = payloads[Math.min(index++, payloads.length - 1)]; return { text: typeof payload === 'string' ? payload : JSON.stringify(payload) } }, testConnection: async () => ({ ok: true, message: 'ok' }) }
+}
+
+describe('AI format repair', () => {
+  it('asks the provider to repair a malformed source location with one additional call', async () => {
+    const validQuestion = { question_id: 'Q001', type: 'single_choice', level: 'comprehension', difficulty: 'basic', question: '這段程式的流程如何運作？', options: [{ id: 'A', text: '依序執行' }, { id: 'B', text: '不會執行' }, { id: 'C', text: '只執行註解' }, { id: 'D', text: '隨機執行' }], answer: 'A', explanation: '來源顯示程式會依序執行。', concept: '流程', source_refs: [{ block_id: 'B001' }] }
+    const malformed = { questions: [{ ...validQuestion, source_refs: [{ block_id: 'B001', pageNumber: '1' }] }] }
+    const repaired = { questions: [{ ...validQuestion, source_refs: [{ block_id: 'B001', page: 1 }] }] }
+    const prompts: string[] = []
+    const generated = await generateQuestionsByPlan(source, plan, providerReturningSequence([malformed, repaired], prompts))
+    expect(generated.keys[0].source_refs[0].page).toBe(1)
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('pageNumber')
+    expect(prompts[1]).toContain('first_ai_output')
+  })
+
+  it('regenerates after two invalid JSON responses', async () => {
+    const validQuestion = { question_id: 'Q01', type: 'single_choice', level: 'comprehension', difficulty: 'basic', question: 'How does this program execute?', options: ['A', 'B', 'C', 'D'].map(id => ({ id, text: id })), answer: 'A', explanation: 'Execution order', concept: 'Flow', source_refs: [{ block_id: 'B001' }] }
+    const prompts: string[] = []
+    const generated = await generateQuestionsByPlan(source, plan, providerReturningSequence(['{"questions":[', '{bad}', { questions: [validQuestion] }], prompts))
+    expect(generated.questions).toHaveLength(1)
+    expect(prompts).toHaveLength(3)
+  })
+
+  it('stops after three invalid JSON responses', async () => {
+    const prompts: string[] = []
+    await expect(generateQuestionsByPlan(source, plan, providerReturningSequence(['{"questions":['], prompts))).rejects.toThrow(/JSON/)
+    expect(prompts).toHaveLength(3)
+  })
+})

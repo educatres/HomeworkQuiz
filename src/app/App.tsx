@@ -10,7 +10,7 @@ import { DEFAULT_PLAN } from '../domain/types'
 import { makeDemoBundle } from '../features/quiz-generation/mockGeneration'
 import { generateExamWithProvider } from '../features/quiz-generation/pipeline'
 import { generateStudentHtml, generateTeacherAnswerHtml, makeStudentZip, makeTeacherZip } from '../features/student-export/generator'
-import { hasActiveApiRequests, REQUEST_TIMEOUT_SECONDS, subscribeToApiRequests } from '../providers/request'
+import { hasActiveApiRequests, subscribeToApiRequests } from '../providers/request'
 import { providerFor } from '../providers/api-tests'
 import { CGU_DEFAULT_MODEL, CGU_ALLOWED_MODELS } from '../providers/cguModels'
 import { classifyProviderError } from '../providers/types'
@@ -207,14 +207,17 @@ export default function App() {
   async function generateOne(record: StudentRecord, actualPlan: BatchPlan, provider: ReturnType<typeof providerFor> | undefined) {
     const rowId = record.source_id; const source = sources.find(item => item.id === record.source_id); if (!source) { updateExamRow(rowId, { status: 'failed', error: `找不到來源文件（source_id: ${record.source_id || '空白'}，檔名：${record.file_name}）。請重新匯入這份作業。` }); return undefined }
     const promptInjectionAlerts = detectPromptInjectionInSource(source.blocks)
-    updateExamRow(rowId, { status: 'generating', completed_questions: 0, total_questions: actualPlan.question_count, error: undefined, promptInjectionAlerts }); let generated: QuizBundle | undefined; let lastError = '未知錯誤'
-    for (let attempt = 1; attempt <= 3 && !generated; attempt++) {
-      try {
-        generated = provider ? await generateExamWithProvider(source, actualPlan, record.student_id, provider, (completed, total) => { updateExamRow(rowId, { status: 'generating', completed_questions: completed, total_questions: total }) }, attempt > 1 ? lastError : '') : await makeDemoBundle(source, actualPlan, record.student_id)
-      } catch (error) { lastError = error instanceof Error ? error.message : '未知錯誤'; if (attempt < 3) { setNotice(`${record.student_id} 第 ${attempt} 次出題失敗，將自動重新呼叫模型（第 ${attempt + 1}/3 次）。`); await new Promise(resolve => setTimeout(resolve, 350)) } }
+    updateExamRow(rowId, { status: 'generating', completed_questions: 0, total_questions: actualPlan.question_count, error: undefined, promptInjectionAlerts })
+    let generated: QuizBundle
+    try {
+      generated = provider
+        ? await generateExamWithProvider(source, actualPlan, record.student_id, provider, (completed, total) => updateExamRow(rowId, { completed_questions: completed, total_questions: total }))
+        : await makeDemoBundle(source, actualPlan, record.student_id)
+    } catch (error) {
+      updateExamRow(rowId, { status: 'failed', error: error instanceof Error ? error.message : '????', completed_questions: 0 })
+      return undefined
     }
-    if (!generated) { updateExamRow(rowId, { status: 'failed', error: `連續 3 次出題失敗：${lastError}`, completed_questions: 0 }); setNotice(`${record.student_id} 連續 3 次出題失敗，可在結果表按「重新出題」。`); return undefined }
-    updateExamRow(rowId, { status: 'completed', completed_questions: generated.exam.questions.length, total_questions: generated.exam.questions.length, bundle: generated, error: undefined }); setBundles(current => [...current.filter(bundle => bundle.exam.student_id !== generated!.exam.student_id), generated!]); return generated
+    updateExamRow(rowId, { status: 'completed', completed_questions: generated.exam.questions.length, total_questions: generated.exam.questions.length, bundle: generated, error: undefined }); setBundles(current => [...current.filter(bundle => bundle.exam.student_id !== generated.exam.student_id), generated]); return generated
   }
   async function generate() {
     if (settings.provider !== 'mock' && !keys[settings.provider]?.trim()) { setNotice('尚未設定 API Key，請先到「AI 設定」輸入並測試 Key。'); setTab('settings'); return }
@@ -302,9 +305,13 @@ function SecurityAlertBadge({ alerts, compact = false }: { alerts?: PromptInject
 }
 
 function ExamResultTable({ rows, onRetryExam, onDownloadExam, onStudentZip, onTeacherZip }: { rows: ExamRow[]; onRetryExam: (rowId: string) => void; onDownloadExam: (row: ExamRow, kind: 'question' | 'answer') => void; onStudentZip: () => void; onTeacherZip: () => void }) {
+  const securityRows = rows.flatMap(row => {
+    const alerts = row.bundle?.key.prompt_injection_alerts ?? row.promptInjectionAlerts
+    return alerts?.length ? [{ row, alerts }] : []
+  })
   if (!rows.length) return null
   const finished = rows.every(row => row.status === 'completed' || row.status === 'failed')
-  return <><section className="panel exam-results-panel" aria-live="polite"><div className="panel-title"><div><h2>逐份試卷結果</h2><p>每份作業完成後會立即顯示試卷與答案下載；安全檢查命中時請先人工檢查作業內容。</p></div><span className="tag">{rows.filter(row => row.status === 'completed').length}/{rows.length} 已完成</span></div><div className="security-summary">{rows.map(row => <div key={row.row_id}><b>{row.student_id}</b><SecurityAlertBadge alerts={row.bundle?.key.prompt_injection_alerts ?? row.promptInjectionAlerts} /></div>)}</div><div className="exam-result-scroll"><table className="exam-result-table"><thead><tr><th>序號</th><th>檔名</th><th>試卷</th><th>答案</th><th>操作</th></tr></thead><tbody>{rows.map((row, index) => { const stem = fileStem(row.file_name); return <tr key={row.row_id}><td>{index + 1}</td><td className="exam-file-name" title={row.file_name}>{row.file_name}</td><td>{row.status === 'completed' && row.bundle ? <button className="download-link" onClick={() => onDownloadExam(row, 'question')}>{stem}_Student.htm</button> : row.status === 'generating' ? <span className="generating-label">出題中...</span> : row.status === 'failed' ? <details className="generation-error"><summary>出題失敗</summary><small>{row.error || '未提供錯誤原因'}</small></details> : <span className="muted">等待中…</span>}</td><td>{row.status === 'completed' && row.bundle ? <button className="download-link" onClick={() => onDownloadExam(row, 'answer')}>{stem}_Teacher.htm</button> : null}</td><td>{row.status === 'generating' ? <span className="progress-count">{row.completed_questions}/{row.total_questions}</span> : <button className="retry-button" disabled={row.status === 'queued'} onClick={() => onRetryExam(row.row_id)}>重新出題</button>}</td></tr> })}</tbody></table></div></section>{finished && <section className="panel export-actions exam-result-actions"><div className="panel-title"><div><h2>下載</h2><p>全部作業已完成處理，可一次下載學生試卷或教師答案。</p></div></div><div className="export-action-buttons"><button className="primary-button export-action-button download-zip-button" onClick={onStudentZip}><DownloadIcon />下載學生試卷 ZIP</button><button className="primary-button export-action-button download-zip-button" onClick={onTeacherZip}><DownloadIcon />下載教師答案 ZIP</button></div></section>}</>
+  return <><section className="panel exam-results-panel" aria-live="polite"><div className="panel-title"><div><h2>逐份試卷結果</h2><p>每份作業完成後會立即顯示試卷與答案下載；安全檢查命中時請先人工檢查作業內容。</p></div><span className="tag">{rows.filter(row => row.status === 'completed').length}/{rows.length} 已完成</span></div>{securityRows.length > 0 && <div className="security-summary">{securityRows.map(({ row, alerts }) => <div key={row.row_id}><b>{row.student_id}</b><SecurityAlertBadge alerts={alerts} /></div>)}</div>}<div className="exam-result-scroll"><table className="exam-result-table"><thead><tr><th>序號</th><th>檔名</th><th>試卷</th><th>答案</th><th>操作</th></tr></thead><tbody>{rows.map((row, index) => { const stem = fileStem(row.file_name); return <tr key={row.row_id}><td>{index + 1}</td><td className="exam-file-name" title={row.file_name}>{row.file_name}</td><td>{row.status === 'completed' && row.bundle ? <button className="download-link" onClick={() => onDownloadExam(row, 'question')}>{stem}_Student.htm</button> : row.status === 'generating' ? <span className="generating-label">出題中...</span> : row.status === 'failed' ? <details className="generation-error"><summary>出題失敗</summary><small>{row.error || '未提供錯誤原因'}</small></details> : <span className="muted">等待中…</span>}</td><td>{row.status === 'completed' && row.bundle ? <button className="download-link" onClick={() => onDownloadExam(row, 'answer')}>{stem}_Teacher.htm</button> : null}</td><td>{row.status === 'generating' ? <span className="progress-count">{row.completed_questions}/{row.total_questions}</span> : <button className="retry-button" disabled={row.status === 'queued'} onClick={() => onRetryExam(row.row_id)}>重新出題</button>}</td></tr> })}</tbody></table></div></section>{finished && <section className="panel export-actions exam-result-actions"><div className="panel-title"><div><h2>下載</h2><p>全部作業已完成處理，可一次下載學生試卷或教師答案。</p></div></div><div className="export-action-buttons"><button className="primary-button export-action-button download-zip-button" onClick={onStudentZip}><DownloadIcon />下載學生試卷 ZIP</button><button className="primary-button export-action-button download-zip-button" onClick={onTeacherZip}><DownloadIcon />下載教師答案 ZIP</button></div></section>}</>
 }
 function QuizScreen({ examRows, onRetryExam, onDownloadExam, ...panelProps }: QuizPanelProps) { return <><QuizPanel {...panelProps} /><ExamResultTable rows={examRows} onRetryExam={onRetryExam} onDownloadExam={onDownloadExam} onStudentZip={panelProps.onStudentZip} onTeacherZip={panelProps.onTeacherZip} /></> }
 
@@ -776,5 +783,5 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
 
 function ApiRequestNotice() {
   const active = useSyncExternalStore(subscribeToApiRequests, hasActiveApiRequests)
-  return <div role="status">{active && <div className="api-request-notice">AI API ???????????????????????????? {REQUEST_TIMEOUT_SECONDS} ??</div>}</div>
+  return <div role="status">{active && <div className="api-request-notice">AI分析中，請勿關閉本畫面</div>}</div>
 }
