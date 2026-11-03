@@ -783,5 +783,13 @@ function GradingPanel({ bundles, provider }: { bundles: QuizBundle[]; provider?:
 
 function ApiRequestNotice() {
   const active = useSyncExternalStore(subscribeToApiRequests, hasActiveApiRequests)
-  return <div role="status">{active && <div className="api-request-notice">AI分析中，請勿關閉本畫面</div>}</div>
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (active && !dialog.open) dialog.showModal()
+    if (!active && dialog.open) dialog.close()
+  }, [active])
+
+  return <dialog ref={dialogRef} className="api-request-notice" aria-labelledby="api-request-message" onCancel={event => event.preventDefault()}><div id="api-request-message">AI分析中，請勿關閉本畫面</div></dialog>
 }
